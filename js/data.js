@@ -22,12 +22,16 @@ const AppData = {
     annee          : '2025-2026',
     dureeSolo      : 25,
     dureeBinome    : 35,
-    pauseHeure     : '12:00',
-    pauseDuree     : 60,
     convocAvant    : 15,
-    heureDebut     : '08:00',   // heure de début de la session
-    heureFin       : '17:00',   // heure de fin de la session
-    margePassage   : 0,         // minutes de marge entre deux passages (optionnel)
+    heureDebut     : '08:00',
+    heureFin       : '17:00',
+    margePassage   : 0,
+    // 3 pauses indépendantes — active:false ou duree:0 = ignorée
+    pauses : [
+      { active: true,  heure: '10:00', duree: 15  },  // Pause 1 : matin
+      { active: true,  heure: '12:00', duree: 60  },  // Pause 2 : méridienne
+      { active: false, heure: '15:00', duree: 15  },  // Pause 3 : après-midi
+    ],
   },
 
   jurys       : [],
@@ -182,7 +186,10 @@ const AppData = {
     if (finMin <= debutMin) return { ok: false, erreur: 'L\'heure de fin doit être après l\'heure de début.' };
 
     const dureeSession  = finMin - debutMin;
-    const minutesUtiles = dureeSession - (parseInt(p.pauseDuree, 10) || 0);
+    // Total des minutes de pauses actives
+    const totalPauses = (p.pauses || []).reduce((s, pa) =>
+      s + ((pa.active && pa.duree > 0) ? parseInt(pa.duree, 10) : 0), 0);
+    const minutesUtiles = dureeSession - totalPauses;
     if (minutesUtiles <= 0) return { ok: false, erreur: 'Durée utile nulle ou négative après déduction de la pause.' };
 
     const nbEleves = this.eleves.length;
@@ -241,8 +248,8 @@ const AppData = {
     const chargeParJuryMin     = Math.ceil(nbEleves / nbJurysMin);
     const coutParJuryMin       = Math.ceil(chargeParJuryMin * dureeMoyParEleve);
     const heureFinEstimeeMin   = this.ajouterMinutes(
-      this.ajouterMinutes(p.heureDebut, (parseInt(p.pauseDuree,10)||0) > 0 ? 0 : 0),
-      coutParJuryMin + (parseInt(p.pauseDuree,10)||0)
+      p.heureDebut,
+      coutParJuryMin + totalPauses
     );
 
     return {
@@ -653,8 +660,14 @@ const AppData = {
     this.params.annee         = (fields.annee||'').trim();
     this.params.dureeSolo     = parseInt(fields.dureeSolo,  10)||25;
     this.params.dureeBinome   = parseInt(fields.dureeBinome,10)||35;
-    this.params.pauseHeure    = fields.pauseHeure  ||'12:00';
-    this.params.pauseDuree    = parseInt(fields.pauseDuree, 10)||60;
+    // Pauses 1, 2, 3
+    if (Array.isArray(fields.pauses)) {
+      this.params.pauses = fields.pauses.map(p => ({
+        active : !!p.active,
+        heure  : p.heure  || '12:00',
+        duree  : parseInt(p.duree, 10) || 0,
+      }));
+    }
     this.params.convocAvant   = parseInt(fields.convocAvant,10)||15;
     this.params.heureDebut    = fields.heureDebut  ||'08:00';
     this.params.heureFin      = fields.heureFin    ||'17:00';
@@ -663,7 +676,12 @@ const AppData = {
 
   reset() {
     this.params      = { etablissement:'Collège Joliot Curie — Bagneux', annee:'2025-2026',
-                         dureeSolo:25, dureeBinome:35, pauseHeure:'12:00', pauseDuree:60,
+                         dureeSolo:25, dureeBinome:35,
+                         pauses:[
+                           {active:true, heure:'10:00', duree:15},
+                           {active:true, heure:'12:00', duree:60},
+                           {active:false,heure:'15:00', duree:15},
+                         ],
                          convocAvant:15, heureDebut:'08:00', heureFin:'17:00', margePassage:0 };
     this.jurys       = [];
     this.eleves      = [];

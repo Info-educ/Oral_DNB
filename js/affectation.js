@@ -238,12 +238,36 @@ const Affectation = {
   // PHASE 4 — HORAIRES
   // ──────────────────────────────────────────────────────────────
 
+  // Construit la liste des pauses actives triées par heure (en minutes)
+  _pausesActives() {
+    return (AppData.params.pauses || [])
+      .filter(p => p.active && p.duree > 0)
+      .map(p => ({ debut: AppData.enMinutes(p.heure), fin: AppData.enMinutes(p.heure) + parseInt(p.duree,10) }))
+      .sort((a,b) => a.debut - b.debut);
+  },
+
+  // Avance le curseur au-delà de toute pause chevauchante (récursivement
+  // pour le cas où une pause suit immédiatement une autre)
+  _sauterPauses(curseur, duree, pauses) {
+    let c = curseur;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const p of pauses) {
+        if (c < p.fin && (c + duree) > p.debut) {
+          c = p.fin;
+          changed = true;
+        }
+      }
+    }
+    return c;
+  },
+
   _calculerHoraires(plannings) {
-    const creneaux   = [];
-    const pauseDebut = AppData.enMinutes(AppData.params.pauseHeure);
-    const pauseFin   = pauseDebut + (AppData.params.pauseDuree || 0);
-    const marge      = parseInt(AppData.params.margePassage, 10) || 0;
-    const m2h        = m => `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+    const creneaux = [];
+    const pauses   = this._pausesActives();
+    const marge    = parseInt(AppData.params.margePassage, 10) || 0;
+    const m2h      = m => `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 
     plannings.forEach(({ jury, groupes }) => {
       if (!groupes.length) return;
@@ -261,12 +285,8 @@ const Affectation = {
           duree = AppData.calculerDuree(e, false);
         }
 
-        // Pause
-        if (AppData.params.pauseDuree > 0) {
-          if (curseur < pauseFin && (curseur + duree) > pauseDebut) {
-            curseur = pauseFin;
-          }
-        }
+        // Sauter toutes les pauses actives qui chevauchent ce créneau
+        curseur = this._sauterPauses(curseur, duree, pauses);
 
         creneaux.push({
           juryId    : jury.id,
@@ -319,19 +339,16 @@ const Affectation = {
     AppData.jurys.forEach(j => parJury.set(j.id, []));
     AppData.affectation.forEach(c => { if (parJury.has(c.juryId)) parJury.get(c.juryId).push(c); });
 
-    const pauseDebut = AppData.enMinutes(AppData.params.pauseHeure);
-    const pauseFin   = pauseDebut + (AppData.params.pauseDuree || 0);
-    const marge      = parseInt(AppData.params.margePassage, 10) || 0;
-    const m2h        = m => `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+    const pauses = this._pausesActives();
+    const marge  = parseInt(AppData.params.margePassage, 10) || 0;
+    const m2h    = m => `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 
     parJury.forEach((creneaux, juryId) => {
       const jury = AppData.getJury(juryId);
       if (!jury || !creneaux.length) return;
       let curseur = AppData.enMinutes(jury.heureDebut || AppData.params.heureDebut);
       creneaux.forEach((c, i) => {
-        if (AppData.params.pauseDuree > 0) {
-          if (curseur < pauseFin && (curseur + c.duree) > pauseDebut) curseur = pauseFin;
-        }
+        curseur = this._sauterPauses(curseur, c.duree, pauses);
         c.heureDebut = m2h(curseur);
         c.heureFin   = m2h(curseur + c.duree);
         c.ordre      = i + 1;

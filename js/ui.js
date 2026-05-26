@@ -61,9 +61,10 @@ function effacerErreurs(regles) {
 // ════════════════════════════════════════════════════════════════
 
 function initNav() {
-  $$('.nav-tab').forEach(tab => {
+  // Supporte les classes nav-tab (ancien header) et nav-item (sidebar)
+  $$('.nav-tab, .nav-item').forEach(tab => {
     tab.addEventListener('click', () => {
-      $$('.nav-tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected','false'); });
+      $$('.nav-tab, .nav-item').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected','false'); });
       tab.classList.add('active'); tab.setAttribute('aria-selected','true');
       $$('.tab-panel').forEach(p => {
         const actif = p.id === `tab-${tab.dataset.tab}`;
@@ -476,8 +477,23 @@ function chargerParams() {
   $('#param-duree-binome').value  = p.dureeBinome;
   $('#param-heure-debut').value   = p.heureDebut;
   $('#param-heure-fin').value     = p.heureFin;
-  $('#param-pause-heure').value   = p.pauseHeure;
-  $('#param-pause-duree').value   = p.pauseDuree;
+  // Pauses 1, 2, 3
+  const pauses = p.pauses || [{active:true,heure:'10:00',duree:15},{active:true,heure:'12:00',duree:60},{active:false,heure:'15:00',duree:15}];
+  [1,2,3].forEach((n,i) => {
+    const pa = pauses[i] || {active:false,heure:'12:00',duree:0};
+    const cb = $(`#param-pause${n}-active`);
+    const ph = $(`#param-pause${n}-heure`);
+    const pd = $(`#param-pause${n}-duree`);
+    if (cb) cb.checked    = !!pa.active;
+    if (ph) ph.value      = pa.heure  || '12:00';
+    if (pd) pd.value      = pa.duree  || 0;
+    // Déclencher le toggle visuel
+    const fields = $(`#pause${n}-fields`);
+    if (fields) {
+      fields.style.opacity = pa.active ? '1' : '0.4';
+      fields.querySelectorAll('input').forEach(inp => inp.disabled = !pa.active);
+    }
+  });
   $('#param-convoc-avant').value  = p.convocAvant;
   $('#param-marge-passage').value = p.margePassage;
 }
@@ -493,8 +509,11 @@ function initParams() {
       dureeBinome   : $('#param-duree-binome').value,
       heureDebut    : $('#param-heure-debut').value,
       heureFin      : $('#param-heure-fin').value,
-      pauseHeure    : $('#param-pause-heure').value,
-      pauseDuree    : $('#param-pause-duree').value,
+      pauses        : [1,2,3].map(n => ({
+        active : $(`#param-pause${n}-active`)?.checked || false,
+        heure  : $(`#param-pause${n}-heure`)?.value   || '12:00',
+        duree  : parseInt($(`#param-pause${n}-duree`)?.value || '0', 10),
+      })),
       convocAvant   : $('#param-convoc-avant').value,
       margePassage  : $('#param-marge-passage').value,
     });
