@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestion Oral DNB — Collège Joliot Curie</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <span class="header-logo" aria-hidden="true">◈</span>
+        <div>
+          <h1 class="header-title">Oral DNB</h1>
+          <p class="header-subtitle">Collège Joliot Curie · Bagneux · Académie de Versailles</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <label class="btn btn-accent" title="Importer le fichier Excel DNB (feuilles Élèves + Jurys)">
+          ↑ Importer Excel
+          <input type="file" id="input-import-xlsx" accept=".xlsx,.xls" hidden />
+        </label>
+        <button class="btn btn-outline" id="btn-export-xlsx" title="Exporter Excel avec affectations">↓ Exporter Excel</button>
+        <button class="btn btn-outline" id="btn-export-json" title="Sauvegarder la session">↓ JSON</button>
+        <label class="btn btn-outline" title="Restaurer une session">↑ JSON<input type="file" id="input-import-json" accept=".json" hidden /></label>
+        <button class="btn btn-primary" id="btn-open-params">⚙ Paramètres</button>
+      </div>
+    </div>
+    <nav class="app-nav" role="tablist">
+      <button class="nav-tab active" role="tab" data-tab="jurys"       aria-selected="true"><span class="nav-icon">👥</span> Jurys</button>
+      <button class="nav-tab"        role="tab" data-tab="eleves"      aria-selected="false"><span class="nav-icon">🎓</span> Élèves</button>
+      <button class="nav-tab"        role="tab" data-tab="affectation" aria-selected="false"><span class="nav-icon">⚡</span> Affectation</button>
+      <button class="nav-tab"        role="tab" data-tab="impressions" aria-selected="false"><span class="nav-icon">🖨</span> Impressions</button>
+    </nav>
+  </header>
+
+  <div id="notif-zone" aria-live="polite" aria-atomic="true"></div>
+
+  <main class="app-main">
+
+    <!-- ── JURYS ─────────────────────────────────────────────── -->
+    <section id="tab-jurys" class="tab-panel active" role="tabpanel">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Jurys d'oral</h2>
+          <p class="section-desc">Chargés depuis Excel ou saisis manuellement. Deux enseignants par jury, salle, langue vivante. L'heure de début et la capacité sont optionnelles (calculées automatiquement).</p>
+        </div>
+        <button class="btn btn-primary" id="btn-add-jury">+ Ajouter un jury</button>
+      </div>
+      <div class="counter-bar"><span id="count-jurys">0 jury enregistré</span></div>
+      <div class="table-wrapper">
+        <table class="data-table" id="jurys-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Jury (enseignants)</th><th>Langue vivante</th>
+              <th>Salle</th><th>Heure début</th><th>Capacité</th><th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="jurys-tbody"></tbody>
+        </table>
+        <div class="table-empty" id="jurys-empty"><p>Aucun jury. Importez un fichier Excel ou cliquez sur <strong>+ Ajouter un jury</strong>.</p></div>
+      </div>
+    </section>
+
+    <!-- ── ÉLÈVES ─────────────────────────────────────────────── -->
+    <section id="tab-eleves" class="tab-panel" role="tabpanel" hidden>
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Candidats</h2>
+          <p class="section-desc">Importés depuis Excel. Vérifiez la langue vivante, les binômes et les aménagements avant d'affecter.</p>
+        </div>
+        <button class="btn btn-primary" id="btn-add-eleve">+ Ajouter un élève</button>
+      </div>
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="search" id="search-eleve" placeholder="Rechercher (nom, prénom, sujet…)" aria-label="Rechercher" />
+        </div>
+        <div class="filter-group">
+          <label for="filter-langue">Langue :</label>
+          <select id="filter-langue"><option value="">Toutes les langues</option></select>
+          <label for="filter-amenagement"><input type="checkbox" id="filter-amenagement" /> Aménagement</label>
+          <label for="filter-binome"><input type="checkbox" id="filter-binome" /> Binômes</label>
+        </div>
+        <span id="count-eleves" class="counter-label">0 élève</span>
+      </div>
+      <div class="table-wrapper">
+        <table class="data-table" id="eleves-table">
+          <thead>
+            <tr><th>#</th><th>Nom</th><th>Prénom</th><th>Classe</th><th>Langue</th><th>Sujet</th><th>Binôme avec</th><th>Particularités</th><th class="col-actions">Actions</th></tr>
+          </thead>
+          <tbody id="eleves-tbody"></tbody>
+        </table>
+        <div class="table-empty" id="eleves-empty"><p>Aucun élève. Importez un fichier Excel ou cliquez sur <strong>+ Ajouter un élève</strong>.</p></div>
+      </div>
+    </section>
+
+    <!-- ── AFFECTATION ────────────────────────────────────────── -->
+    <section id="tab-affectation" class="tab-panel" role="tabpanel" hidden>
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Affectation automatique</h2>
+          <p class="section-desc">L'algorithme respecte la langue vivante, les binômes, les aménagements, les passages prioritaires et la pause. Résultat modifiable à la volée.</p>
+        </div>
+        <button class="btn btn-primary" id="btn-lancer-affectation">⚡ Lancer l'affectation</button>
+      </div>
+
+      <!-- Calculateur de jurys -->
+      <div class="calc-panel">
+        <div class="calc-header">
+          <h3 class="calc-titre">🧮 Calculateur de jurys</h3>
+          <p class="calc-desc">Basé sur les paramètres de durée et de plage horaire (modifiables dans <strong>⚙ Paramètres</strong>).</p>
+          <div class="calc-params-recap">
+            <span>Solo : <strong id="recap-solo">—</strong> min</span>
+            <span>Binôme : <strong id="recap-binome">—</strong> min</span>
+            <span>Plage : <strong id="recap-debut">—</strong> → <strong id="recap-fin">—</strong></span>
+            <span>Pause : <strong id="recap-pause">—</strong> min</span>
+          </div>
+        </div>
+        <div id="calculateur-result" class="calc-result-zone">
+          <p class="calc-attente">Chargez des élèves pour voir le calcul.</p>
+        </div>
+      </div>
+
+      <div id="stats-affectation" class="stats-bar"></div>
+      <div id="affectation-result">
+        <div class="placeholder-zone"><p>Chargez les données puis cliquez sur <strong>⚡ Lancer l'affectation</strong>.</p></div>
+      </div>
+    </section>
+
+    <!-- ── IMPRESSIONS ────────────────────────────────────────── -->
+    <section id="tab-impressions" class="tab-panel" role="tabpanel" hidden>
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Génération des documents</h2>
+          <p class="section-desc">Tous les documents sont générés localement. Aucune donnée n'est transmise.</p>
+        </div>
+      </div>
+      <div class="impressions-grid">
+        <div class="impression-card">
+          <div class="impression-icon">📄</div>
+          <div class="impression-body"><h3>Convocations élèves</h3><p>Une page par candidat avec heure, salle, durée et consignes.</p></div>
+          <button class="btn btn-primary" id="btn-print-convoc-eleves">🖨 Imprimer</button>
+        </div>
+        <div class="impression-card">
+          <div class="impression-icon">👨‍🏫</div>
+          <div class="impression-body"><h3>Convocations jurys</h3><p>Planning complet de chaque jury avec particularités des candidats.</p></div>
+          <button class="btn btn-primary" id="btn-print-convoc-jurys">🖨 Imprimer</button>
+        </div>
+        <div class="impression-card">
+          <div class="impression-icon">📋</div>
+          <div class="impression-body"><h3>Récapitulatif candidats</h3><p>Tous les élèves classés par jury avec horaires.</p></div>
+          <button class="btn btn-primary" id="btn-print-recap">🖨 Imprimer</button>
+        </div>
+        <div class="impression-card">
+          <div class="impression-icon">✍</div>
+          <div class="impression-body"><h3>Feuille d'émargement</h3><p>Tableau de signatures par jury avec zone certification.</p></div>
+          <button class="btn btn-primary" id="btn-print-emargement">🖨 Imprimer</button>
+        </div>
+        <div class="impression-card">
+          <div class="impression-icon">📌</div>
+          <div class="impression-body"><h3>Consignes jury</h3><p>Rappels réglementaires, durées, notation, conduite à tenir.</p></div>
+          <button class="btn btn-primary" id="btn-print-consignes">🖨 Imprimer</button>
+        </div>
+        <div class="impression-card impression-card-export">
+          <div class="impression-icon">📊</div>
+          <div class="impression-body"><h3>Export Excel complet</h3><p>3 feuilles : Affectation, Élèves (avec horaires), Jurys.</p></div>
+          <button class="btn btn-accent" id="btn-export-xlsx-impressions">↓ Télécharger Excel</button>
+        </div>
+      </div>
+      <div class="rgpd-banner">
+        <span class="rgpd-icon">🔒</span>
+        <p><strong>Conformité RGPD</strong> — Toutes les données restent dans votre navigateur. Aucun serveur, aucune transmission externe.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="print-zone" aria-hidden="true"></div>
+
+  <!-- MODAL Jury -->
+  <dialog class="modal" id="modal-jury" aria-labelledby="modal-jury-title">
+    <div class="modal-inner">
+      <header class="modal-header">
+        <h3 id="modal-jury-title">Jury</h3>
+        <button class="modal-close" aria-label="Fermer" data-close="modal-jury">✕</button>
+      </header>
+      <form id="form-jury" class="modal-form" novalidate>
+        <input type="hidden" id="jury-id" />
+        <div class="form-group full">
+          <label for="jury-nom">Jury (nom(s) enseignant(s)) <span class="required">*</span></label>
+          <input type="text" id="jury-nom" placeholder="Ex. : Martin Claire / Dupont Paul" required autocomplete="off" />
+          <span class="field-error" id="err-jury-nom"></span>
+          <small class="field-hint">Format libre — les deux noms peuvent être séparés par " / ".</small>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="jury-langue">Langue vivante</label>
+            <input type="text" id="jury-langue" placeholder="Anglais, Espagnol… (vide = toutes)" autocomplete="off" />
+            <small class="field-hint">Laisser vide si le jury accepte toutes les langues.</small>
+          </div>
+          <div class="form-group">
+            <label for="jury-salle">Salle <span class="required">*</span></label>
+            <input type="text" id="jury-salle" placeholder="Ex. : 204" required autocomplete="off" />
+            <span class="field-error" id="err-jury-salle"></span>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="jury-heure-debut">Heure de début <small>(optionnel)</small></label>
+            <input type="time" id="jury-heure-debut" />
+            <small class="field-hint">Par défaut : heure globale des paramètres.</small>
+          </div>
+          <div class="form-group">
+            <label for="jury-capacite">Capacité max <small>(optionnel)</small></label>
+            <input type="number" id="jury-capacite" min="1" max="40" placeholder="Auto" />
+            <small class="field-hint">Laisser vide pour calcul automatique.</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-jury">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- MODAL Élève -->
+  <dialog class="modal" id="modal-eleve" aria-labelledby="modal-eleve-title">
+    <div class="modal-inner">
+      <header class="modal-header">
+        <h3 id="modal-eleve-title">Élève</h3>
+        <button class="modal-close" aria-label="Fermer" data-close="modal-eleve">✕</button>
+      </header>
+      <form id="form-eleve" class="modal-form" novalidate>
+        <input type="hidden" id="eleve-id" />
+        <div class="form-row">
+          <div class="form-group">
+            <label for="eleve-nom">Nom <span class="required">*</span></label>
+            <input type="text" id="eleve-nom" placeholder="DUPONT" required autocomplete="off" />
+            <span class="field-error" id="err-eleve-nom"></span>
+          </div>
+          <div class="form-group">
+            <label for="eleve-prenom">Prénom <span class="required">*</span></label>
+            <input type="text" id="eleve-prenom" placeholder="Marie" required autocomplete="off" />
+            <span class="field-error" id="err-eleve-prenom"></span>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="eleve-classe">Classe <span class="required">*</span></label>
+            <input type="text" id="eleve-classe" placeholder="3EME A" required autocomplete="off" />
+            <span class="field-error" id="err-eleve-classe"></span>
+          </div>
+          <div class="form-group">
+            <label for="eleve-langue">Langue vivante <small>(optionnel)</small></label>
+            <input type="text" id="eleve-langue" placeholder="Anglais, Espagnol… (vide = indifférent)" autocomplete="off" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full">
+            <label for="eleve-sujet">Sujet de l'exposé</label>
+            <input type="text" id="eleve-sujet" placeholder="Ex. : La colonisation de l'Algérie" autocomplete="off" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="eleve-parcours">Choix parcours</label>
+            <input type="text" id="eleve-parcours" placeholder="PEAC, Avenir, Santé…" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label for="eleve-binome">Binôme avec (NOM Prénom)</label>
+            <input type="text" id="eleve-binome" placeholder="MARTIN Paul" autocomplete="off" />
+          </div>
+        </div>
+        <div class="form-row checkboxes-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="eleve-amenagement" />
+            <span>Aménagement tiers-temps <small>(durée ×⁴⁄₃ arrondie à 5 min)</small></span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="eleve-prioritaire" />
+            <span>Passage prioritaire <small>(1<sup>er</sup> créneau)</small></span>
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-eleve">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- MODAL Déplacement -->
+  <dialog class="modal" id="modal-deplacement" aria-labelledby="modal-deplacement-title">
+    <div class="modal-inner">
+      <header class="modal-header">
+        <h3 id="modal-deplacement-title">⇄ Déplacer un créneau</h3>
+        <button class="modal-close" aria-label="Fermer" data-close="modal-deplacement">✕</button>
+      </header>
+      <form id="form-deplacement" class="modal-form" novalidate>
+        <input type="hidden" id="deplacement-creneau-idx" />
+        <div class="form-group">
+          <label>Candidat(s) concerné(s)</label>
+          <p id="deplacement-eleves" class="deplacement-noms"></p>
+        </div>
+        <div class="form-group">
+          <label for="deplacement-jury-cible">Affecter au jury <span class="required">*</span></label>
+          <select id="deplacement-jury-cible" required></select>
+          <small class="field-hint">Le créneau sera ajouté à la fin du planning du jury sélectionné.</small>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-deplacement">Annuler</button>
+          <button type="submit" class="btn btn-primary">Déplacer</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- MODAL Paramètres -->
+  <dialog class="modal" id="modal-params" aria-labelledby="modal-params-title">
+    <div class="modal-inner">
+      <header class="modal-header">
+        <h3 id="modal-params-title">⚙ Paramètres généraux</h3>
+        <button class="modal-close" aria-label="Fermer" data-close="modal-params">✕</button>
+      </header>
+      <form id="form-params" class="modal-form" novalidate>
+
+        <fieldset class="form-fieldset">
+          <legend>Plage horaire de la session</legend>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="param-heure-debut">Heure de début</label>
+              <input type="time" id="param-heure-debut" value="08:00" />
+            </div>
+            <div class="form-group">
+              <label for="param-heure-fin">Heure de fin</label>
+              <input type="time" id="param-heure-fin" value="17:00" />
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-fieldset">
+          <legend>Durées de passage</legend>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="param-duree-solo">Durée solo (min)</label>
+              <input type="number" id="param-duree-solo" min="5" max="60" value="25" />
+            </div>
+            <div class="form-group">
+              <label for="param-duree-binome">Durée binôme (min)</label>
+              <input type="number" id="param-duree-binome" min="5" max="90" value="35" />
+            </div>
+            <div class="form-group">
+              <label for="param-marge-passage">Marge entre passages (min)</label>
+              <input type="number" id="param-marge-passage" min="0" max="30" value="0" />
+              <small class="field-hint">Temps de transition entre deux candidats.</small>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-fieldset">
+          <legend>Pause méridienne</legend>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="param-pause-heure">Heure de la pause</label>
+              <input type="time" id="param-pause-heure" value="12:00" />
+            </div>
+            <div class="form-group">
+              <label for="param-pause-duree">Durée pause (min) — 0 = pas de pause</label>
+              <input type="number" id="param-pause-duree" min="0" max="180" value="60" />
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-fieldset">
+          <legend>Convocations &amp; établissement</legend>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="param-convoc-avant">Convoquer X min avant le passage</label>
+              <input type="number" id="param-convoc-avant" min="0" max="60" value="15" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group full">
+              <label for="param-etablissement">Nom de l'établissement</label>
+              <input type="text" id="param-etablissement" value="Collège Joliot Curie — Bagneux" autocomplete="off" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group full">
+              <label for="param-annee">Année scolaire</label>
+              <input type="text" id="param-annee" value="2025-2026" autocomplete="off" />
+            </div>
+          </div>
+        </fieldset>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-params">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <div class="modal-backdrop" id="modal-backdrop" hidden aria-hidden="true"></div>
+
+  <script src="js/data.js?v=4"></script>
+  <script src="js/ui.js?v=4"></script>
+  <script src="js/affectation.js?v=4"></script>
+  <script src="js/print.js?v=4"></script>
+
+  <!-- Mise à jour du récap paramètres dans le calculateur -->
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    function majRecap() {
+      const p = AppData.params;
+      const r = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+      r('recap-solo',   p.dureeSolo);
+      r('recap-binome', p.dureeBinome);
+      r('recap-debut',  p.heureDebut);
+      r('recap-fin',    p.heureFin);
+      r('recap-pause',  p.pauseDuree);
+    }
+    majRecap();
+    document.getElementById('form-params')?.addEventListener('submit', () => setTimeout(majRecap, 100));
+
+    // Alias bouton export Excel impressions
+    const alias = document.getElementById('btn-export-xlsx-impressions');
+    if (alias) alias.addEventListener('click', () => document.getElementById('btn-export-xlsx').click());
+  });
+  </script>
+
+</body>
+</html>
