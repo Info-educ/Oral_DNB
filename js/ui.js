@@ -32,6 +32,42 @@ function notifier(message, type = 'success', duration = 4500) {
 }
 window.notifier = notifier;
 
+// ════════════════════════════════════════════════════════════════
+// INDICATEUR NON SAUVEGARDÉ
+// ════════════════════════════════════════════════════════════════
+
+const Unsaved = {
+  _modified: false,
+
+  /** Marque la session comme modifiée (appeler après tout changement de données) */
+  marquer() {
+    if (this._modified) return;
+    this._modified = true;
+    const ind = document.getElementById('save-indicator');
+    const ban = document.getElementById('unsaved-banner');
+    const btn = document.getElementById('btn-export-json');
+    if (ind) ind.classList.add('visible');
+    if (ban) ban.classList.add('visible');
+    if (btn) btn.classList.add('sidebar-btn-unsaved');
+  },
+
+  /** Marque la session comme sauvegardée */
+  sauvegarder() {
+    this._modified = false;
+    const ind = document.getElementById('save-indicator');
+    const ban = document.getElementById('unsaved-banner');
+    const btn = document.getElementById('btn-export-json');
+    if (ind) ind.classList.remove('visible');
+    if (ban) ban.classList.remove('visible');
+    if (btn) btn.classList.remove('sidebar-btn-unsaved');
+  },
+
+  /** Vrai si des modifications non sauvegardées existent */
+  get estModifie() { return this._modified; },
+};
+
+window.Unsaved = Unsaved;
+
 function escHtml(str) {
   return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -318,6 +354,8 @@ const UI = {
   _updateStats() {
     const el = $('#stats-affectation'); if (!el) return;
     if (!AppData.affectation.length) { el.textContent=''; return; }
+    // Marquer non sauvegardé si affectation vient d'être calculée
+    if (typeof Unsaved !== 'undefined') Unsaved.marquer();
     const nbAff    = AppData.affectation.reduce((s,c)=>s+c.eleveIds.length,0);
     const nbNonAff = AppData.nbEleves() - nbAff;
     el.innerHTML = `
@@ -357,7 +395,7 @@ function initModalDeplacement() {
       const juryId = parseInt($('#deplacement-jury-cible').value, 10);
       const err    = Affectation.deplacerCreneau(idx, juryId);
       if (err) { notifier(err,'error'); }
-      else { fermerModal('modal-deplacement'); UI.renderAffectation(); notifier('Créneau déplacé.','success'); }
+      else { fermerModal('modal-deplacement'); UI.renderAffectation(); Unsaved.marquer(); notifier('Créneau déplacé.','success'); }
     });
   }
 }
@@ -396,6 +434,7 @@ function initFormJury() {
     const idRaw = $('#jury-id').value;
     if (idRaw) { AppData.updateJury(parseInt(idRaw,10),fields); notifier('Jury mis à jour.'); }
     else       { AppData.addJury(fields);                       notifier('Jury ajouté.'); }
+    Unsaved.marquer();
     fermerModal('modal-jury'); renderJurys();
   });
 }
@@ -442,6 +481,7 @@ function initFormEleve() {
     const idRaw = $('#eleve-id').value;
     if (idRaw) { AppData.updateEleve(parseInt(idRaw,10),fields); notifier('Élève mis à jour.'); }
     else       { AppData.addEleve(fields);                       notifier('Élève ajouté.'); }
+    Unsaved.marquer();
     fermerModal('modal-eleve'); renderEleves();
   });
 }
@@ -518,6 +558,7 @@ function initParams() {
       margePassage  : $('#param-marge-passage').value,
     });
     fermerModal('modal-params');
+    Unsaved.marquer();
     notifier('Paramètres enregistrés.','success');
     // Recalcule le calculateur si on est sur l'onglet affectation
     UI._renderCalculateur();
@@ -538,14 +579,14 @@ function initTableActions() {
     switch(action) {
       case 'edit-jury':  { const j=AppData.getJury(id); if(j) ouvrirModalJury(j); break; }
       case 'del-jury':
-        if (confirm('Supprimer ce jury ?')) { AppData.deleteJury(id); renderJurys(); notifier('Jury supprimé.','warning'); }
+        if (confirm('Supprimer ce jury ?')) { AppData.deleteJury(id); renderJurys(); Unsaved.marquer(); notifier('Jury supprimé.','warning'); }
         break;
       case 'edit-eleve': { const ev=AppData.getEleve(id); if(ev) ouvrirModalEleve(ev); break; }
       case 'del-eleve':
-        if (confirm('Supprimer cet élève ?')) { AppData.deleteEleve(id); renderEleves(); peuplerFiltreLangues(); notifier('Élève supprimé.','warning'); }
+        if (confirm('Supprimer cet élève ?')) { AppData.deleteEleve(id); renderEleves(); peuplerFiltreLangues(); Unsaved.marquer(); notifier('Élève supprimé.','warning'); }
         break;
       case 'del-creneau':
-        if (confirm('Retirer ce créneau ?')) { Affectation.supprimerCreneau(idx); UI.renderAffectation(); notifier('Créneau supprimé.','warning'); }
+        if (confirm('Retirer ce créneau ?')) { Affectation.supprimerCreneau(idx); UI.renderAffectation(); Unsaved.marquer(); notifier('Créneau supprimé.','warning'); }
         break;
     }
   });
@@ -567,6 +608,7 @@ function initImportExcel() {
       catch(err) { notifier(`Erreur import Excel : ${err.message}`,'error',8000); console.error(err); return; }
       renderJurys(); renderEleves(); peuplerFiltreLangues();
       AppData.affectation = []; UI.renderAffectation();
+      Unsaved.marquer();
       notifier(`Excel importé : ${res.nbEleves} élève(s), ${res.nbJurys} jury(s).`,'success',6000);
       res.avertissements.forEach(a => notifier(a,'warning',9000));
     };
@@ -582,7 +624,9 @@ function initImportExcel() {
 function initImportExportJSON() {
   $('#btn-export-json').addEventListener('click', () => {
     if (!AppData.nbJurys() && !AppData.nbEleves()) { notifier('Rien à exporter.','warning'); return; }
-    AppData.exporterJSON(); notifier('Session JSON exportée.','success');
+    AppData.exporterJSON();
+    Unsaved.sauvegarder();
+    notifier('Session sauvegardée en JSON. Gardez ce fichier précieusement !','success', 6000);
   });
   $('#input-import-json').addEventListener('change', e => {
     const file = e.target.files[0]; if (!file) return;
@@ -593,7 +637,8 @@ function initImportExportJSON() {
       const err = AppData.importerJSON(data);
       if (err) { notifier(err,'error'); return; }
       renderJurys(); renderEleves(); peuplerFiltreLangues(); UI.renderAffectation();
-      notifier(`Session importée : ${AppData.nbJurys()} jury(s), ${AppData.nbEleves()} élève(s).`,'success');
+      Unsaved.sauvegarder(); // la session chargée est considérée "sauvegardée"
+      notifier(`Session restaurée : ${AppData.nbJurys()} jury(s), ${AppData.nbEleves()} élève(s).`,'success');
     };
     reader.readAsText(file,'UTF-8');
     e.target.value = '';

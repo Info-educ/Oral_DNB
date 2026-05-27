@@ -45,17 +45,32 @@
       </nav>
 
       <div class="sidebar-actions">
-        <label class="sidebar-btn sidebar-btn-accent" title="Importer le fichier Excel DNB">
-          <span>↑</span> Excel
+
+        <div class="sidebar-section-label">Excel</div>
+        <label class="sidebar-btn sidebar-btn-accent" title="Importer le fichier Excel DNB (feuilles Élèves + Jurys)">
+          📥 Importer Excel
           <input type="file" id="input-import-xlsx" accept=".xlsx,.xls" hidden />
         </label>
-        <button class="sidebar-btn" id="btn-export-xlsx" title="Exporter Excel avec affectations">↓ Excel</button>
-        <button class="sidebar-btn" id="btn-export-json" title="Sauvegarder la session JSON">↓ JSON</button>
-        <label class="sidebar-btn" title="Restaurer une session JSON">
-          ↑ JSON
+        <button class="sidebar-btn" id="btn-export-xlsx" title="Exporter un fichier Excel avec les affectations complètes">
+          📤 Exporter Excel
+        </button>
+
+        <div class="sidebar-section-label sidebar-section-label-mt">Session JSON</div>
+        <button class="sidebar-btn sidebar-btn-save" id="btn-export-json" title="Sauvegarder la session complète en JSON pour la réutiliser">
+          💾 Sauvegarder
+          <span class="save-indicator" id="save-indicator" title="Modifications non sauvegardées">!</span>
+        </button>
+        <label class="sidebar-btn" title="Restaurer une session JSON précédemment sauvegardée">
+          📂 Restaurer
           <input type="file" id="input-import-json" accept=".json" hidden />
         </label>
+
         <button class="sidebar-btn sidebar-btn-params" id="btn-open-params">⚙ Paramètres</button>
+      </div>
+
+      <!-- Bannière non sauvegardé (visible sous la sidebar) -->
+      <div class="unsaved-banner" id="unsaved-banner">
+        ⚠ Modifications non sauvegardées — pensez à <strong>Sauvegarder</strong>
       </div>
 
     </aside>
@@ -483,10 +498,10 @@
 
   <div class="modal-backdrop" id="modal-backdrop" hidden aria-hidden="true"></div>
 
-  <script src="js/data.js?v=6"></script>
-  <script src="js/ui.js?v=6"></script>
-  <script src="js/affectation.js?v=6"></script>
-  <script src="js/print.js?v=6"></script>
+  <script src="js/data.js?v=7"></script>
+  <script src="js/ui.js?v=7"></script>
+  <script src="js/affectation.js?v=7"></script>
+  <script src="js/print.js?v=7"></script>
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {

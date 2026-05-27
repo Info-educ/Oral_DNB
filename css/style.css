@@ -467,3 +467,74 @@ dialog.modal::backdrop { display: none; }
   .consigne-bloc li { margin-bottom: .1cm; }
   .consignes-footer { margin-top: .5cm; padding-top: .3cm; border-top: 1px solid #ddd; font-size: 8.5pt; color: #555; text-align: center; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Rev.5 — Indicateur non sauvegardé + libellés Import/Export
+═══════════════════════════════════════════════════════════ */
+
+/* Séparateur de section dans la sidebar */
+.sidebar-section-label {
+  font-size: .65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: rgba(255,255,255,.35);
+  padding: .25rem .25rem 0;
+  margin-top: .1rem;
+}
+.sidebar-section-label-mt { margin-top: .6rem; }
+
+/* Indicateur ! dans le bouton Sauvegarder */
+.save-indicator {
+  display: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: white;
+  font-size: .7rem;
+  font-weight: 900;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: pulse 1.8s ease-in-out infinite;
+  margin-left: auto;
+}
+.save-indicator.visible {
+  display: inline-flex;
+}
+
+/* Bouton Sauvegarder en état non sauvegardé */
+.sidebar-btn-save {
+  position: relative;
+}
+.sidebar-btn-unsaved {
+  background: rgba(239,68,68,.25) !important;
+  border-color: rgba(239,68,68,.6) !important;
+  color: #fca5a5 !important;
+}
+.sidebar-btn-unsaved:hover {
+  background: rgba(239,68,68,.4) !important;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .7; transform: scale(1.15); }
+}
+
+/* Bannière non sauvegardé — sous la sidebar */
+.unsaved-banner {
+  display: none;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius);
+  padding: .5rem .75rem;
+  font-size: .75rem;
+  color: #991b1b;
+  margin: .5rem .75rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.unsaved-banner.visible {
+  display: block;
+}
