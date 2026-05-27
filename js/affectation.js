@@ -3,11 +3,12 @@
  * Oral DNB · Collège Joliot Curie  —  Rev.3
  *
  * Contraintes :
- *   1. Langue STRICTE (rev.3) :
- *        élève Anglais  → jury Anglais UNIQUEMENT
- *        élève Espagnol → jury Espagnol UNIQUEMENT
- *        élève sans langue → jury sans langue UNIQUEMENT
- *        jury sans langue → élèves sans langue UNIQUEMENT
+ *   1. Langue avec priorité (rev.5) :
+ *        élève Anglais  → jury Anglais en priorité, puis jurys sans langue
+ *        élève Espagnol → jury Espagnol en priorité, puis jurys sans langue
+ *        élève sans langue → jury sans langue d'abord, puis jurys avec langue (complétion)
+ *        jury avec langue → élèves de la langue en priorité, complété par sans-langue
+ *        jury sans langue → élèves sans langue uniquement
  *   2. Binômes : même jury + même créneau + dureeBinome
  *   3. Tiers-temps : durée × 4/3 arrondie au multiple de 5 min
  *   4. Prioritaires : premiers créneaux de leur jury
@@ -162,28 +163,28 @@ const Affectation = {
   // ──────────────────────────────────────────────────────────────
 
   /**
-   * Compatibilité langue — règle STRICTE (rev.3) :
+   * Priorité langue pour un jury donné face à un groupe d'élèves.
    *
-   *   élève Anglais   + jury Anglais   → ✓
-   *   élève Espagnol  + jury Espagnol  → ✓
-   *   élève sans langue + jury sans langue → ✓
-   *   TOUT AUTRE CAS → ✗
+   * Nouvelle règle (rev.5) :
+   *   - Jury AVEC langue :
+   *       → Priorité 1 : élèves dont la langue correspond (ex. Anglais → Anglais)
+   *       → Priorité 2 : élèves SANS langue (pour compléter si places restantes)
+   *       → Interdit   : élèves d'une autre langue spécifiée (ex. Espagnol dans jury Anglais)
+   *   - Jury SANS langue :
+   *       → Élèves SANS langue uniquement (les élèves avec langue ont déjà leur jury)
    *
-   * Autrement dit : les deux doivent être identiques (insensible à la casse).
-   * Un jury sans langue n'accepte PAS les élèves avec une langue spécifiée.
-   * Un élève sans langue ne peut PAS aller dans un jury avec une langue spécifiée.
-   *
-   * @param {string} juryLangue  - langue du jury  (vide = sans langue)
-   * @param {string} eleveLangue - langue de l'élève (vide = sans langue)
-   * @returns {boolean}
+   * @returns {'exact'|'fill'|'incompatible'}
+   *   'exact'        → langue élève = langue jury (passage en priorité 1)
+   *   'fill'         → jury avec langue + élève sans langue (remplissage)
+   *   'incompatible' → pas de place pour cet élève dans ce jury
    */
-  _langueCompatible(juryLangue, eleveLangue) {
+  _prioriteLangue(juryLangue, eleveLangue) {
     const jl = (juryLangue  || '').trim().toLowerCase();
     const el = (eleveLangue || '').trim().toLowerCase();
-    // Les deux vides → compatible (tous sans langue ensemble)
-    // Les deux identiques → compatible
-    // Un vide, l'autre non → incompatible
-    return jl === el;
+
+    if (jl === el) return 'exact';           // Les deux identiques (incl. les deux vides)
+    if (jl !== '' && el === '') return 'fill'; // Jury avec langue, élève sans langue → remplissage
+    return 'incompatible';                    // Toute autre combinaison
   },
 
   _affecter(groupesTries) {
@@ -191,44 +192,72 @@ const Affectation = {
     const plannings = new Map();
     AppData.jurys.forEach(j => plannings.set(j.id, { jury:j, groupes:[], nbEleves:0 }));
 
-    groupesTries.forEach(groupe => {
-      const langue = groupe.langue;
+    // Algorithme en 2 passes :
+    //   Passe 1 — placer tous les élèves AVEC langue dans leurs jurys correspondants
+    //   Passe 2 — placer les élèves SANS langue (jurys sans langue d'abord, puis compléter les jurys avec langue)
 
-      const compatibles = AppData.jurys.filter(j => {
-        const plan   = plannings.get(j.id);
-        const langOk = this._langueCompatible(j.langue, langue);
-        const capOk  = plan.nbEleves + groupe.eleveIds.length <= j.capacite;
-        return langOk && capOk;
+    const avecLangue  = groupesTries.filter(g => g.langue !== '');
+    const sansLangue  = groupesTries.filter(g => g.langue === '');
+
+    const placerGroupe = (groupe, jurysCandidats, avertir) => {
+      // Parmi les candidats, prendre le moins chargé avec de la place
+      const disponibles = jurysCandidats.filter(j => {
+        const plan = plannings.get(j.id);
+        return plan.nbEleves + groupe.eleveIds.length <= j.capacite;
       });
 
-      if (compatibles.length === 0) {
-        // Essai sans contrainte de capacité (jury surchargé mais on signale)
-        const compatiblesLangOnly = AppData.jurys.filter(j => this._langueCompatible(j.langue, langue));
-        if (compatiblesLangOnly.length === 0) {
+      if (disponibles.length === 0) {
+        if (avertir) {
           const noms = groupe.eleveIds.map(id => {
             const e = AppData.getEleve(id);
             return e ? `${e.nom} ${e.prenom}` : '?';
           }).join(', ');
-          const langLabel = langue ? `"${langue}"` : 'sans langue';
-          avertAffect.push(`Aucun jury ${langLabel} disponible pour : ${noms}. Vérifiez la feuille Jurys.`);
-          return;
+          const langLabel = groupe.langue ? `"${groupe.langue}"` : 'sans langue';
+          avertAffect.push(`Aucun jury ${langLabel} disponible pour : ${noms}`);
         }
-        // Débordement : mettre dans le jury le moins chargé parmi compatibles LV
-        compatiblesLangOnly.sort((a,b) => plannings.get(a.id).nbEleves - plannings.get(b.id).nbEleves);
-        const jury = compatiblesLangOnly[0];
-        const plan = plannings.get(jury.id);
-        plan.groupes.push(groupe);
-        plan.nbEleves += groupe.eleveIds.length;
-        avertAffect.push(`Jury "${jury.nom}" légèrement surchargé (capacité: ${jury.capacite}).`);
-        return;
+        return false;
       }
 
-      // Équilibrage : jury le moins chargé
-      compatibles.sort((a,b) => plannings.get(a.id).nbEleves - plannings.get(b.id).nbEleves);
-      const jury = compatibles[0];
+      disponibles.sort((a,b) => plannings.get(a.id).nbEleves - plannings.get(b.id).nbEleves);
+      const jury = disponibles[0];
       const plan = plannings.get(jury.id);
       plan.groupes.push(groupe);
       plan.nbEleves += groupe.eleveIds.length;
+      return true;
+    };
+
+    // ── Passe 1 : élèves avec langue → jurys de même langue ──
+    avecLangue.forEach(groupe => {
+      const jCompatibles = AppData.jurys.filter(j =>
+        this._prioriteLangue(j.langue, groupe.langue) === 'exact'
+      );
+      placerGroupe(groupe, jCompatibles, true);
+    });
+
+    // ── Passe 2 : élèves sans langue ─────────────────────────
+    // 2a. D'abord les jurys sans langue (correspondance exacte)
+    // 2b. Ensuite les jurys avec langue qui ont encore de la place (remplissage)
+    sansLangue.forEach(groupe => {
+      // Essai 2a : jurys sans langue
+      const jSansLangue = AppData.jurys.filter(j =>
+        this._prioriteLangue(j.langue, '') === 'exact'
+      );
+      const place2a = placerGroupe(groupe, jSansLangue, false);
+      if (place2a) return;
+
+      // Essai 2b : jurys avec langue (remplissage)
+      const jAvecLangue = AppData.jurys.filter(j =>
+        this._prioriteLangue(j.langue, '') === 'fill'
+      );
+      const place2b = placerGroupe(groupe, jAvecLangue, false);
+      if (place2b) return;
+
+      // Aucune place nulle part
+      const noms = groupe.eleveIds.map(id => {
+        const e = AppData.getEleve(id);
+        return e ? `${e.nom} ${e.prenom}` : '?';
+      }).join(', ');
+      avertAffect.push(`Aucun jury disponible pour (sans langue) : ${noms}`);
     });
 
     return { plannings, avertAffect };
@@ -318,8 +347,10 @@ const Affectation = {
 
     const e = AppData.getEleve(creneau.eleveIds[0]);
     if (e) {
-      const langOk = this._langueCompatible(juryCible.langue, e.langue);
-      if (!langOk) return `Incompatibilité de langue (élève: ${e.langue||'—'} / jury: ${juryCible.langue||'—'}).`;
+      const prio = this._prioriteLangue(juryCible.langue, e.langue);
+      if (prio === 'incompatible') {
+        return `Incompatibilité de langue (élève: ${e.langue||'sans langue'} / jury: ${juryCible.langue||'sans langue'}).`;
+      }
     }
 
     const dejaDans = AppData.affectation

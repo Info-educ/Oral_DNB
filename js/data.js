@@ -396,157 +396,157 @@ const AppData = {
       avert.push(`Feuille "Jurys" introuvable. Feuilles présentes : ${wb.SheetNames.join(', ')}`);
     }
 
-    // ── Convertir une feuille en tableau d'objets normalisés ──
-    //
-    // Stratégie robuste pour les fichiers ayant une ligne de titre en ligne 1
-    // ("ORAL DNB 2025-2026…") et les vrais en-têtes en ligne 2 :
-    //
-    // 1. On lit TOUTES les lignes avec header:1 (tableau brut, pas d'objet).
-    // 2. On cherche la première ligne qui ressemble à des en-têtes de colonnes
-    //    (contient des mots comme "Nom", "Rang", "Jury", "Enseignant"…).
-    // 3. On utilise cette ligne comme en-têtes et les suivantes comme données.
-    //
-    // Cette approche fonctionne quelle que soit la version de SheetJS et quel
-    // que soit le nombre de lignes de titre au-dessus des vraies données.
-    const feuilleEnObjets = (nom) => {
-      if (!nom) return [];
+    // ── Lire une feuille en tableau de tableaux bruts ────────
+    // Retourne { headers: string[], rows: any[][] }
+    // headers = ligne d'en-tête réelle (première ligne avec ≥2 mots-clés connus)
+    // rows    = lignes de données suivantes (non vides)
+    const lireFeuille = (nom) => {
+      if (!nom) return { headers:[], rows:[] };
       const ws = wb.Sheets[nom];
-
-      // Lecture brute : header:1 retourne un tableau de tableaux
       const brut = XLSX.utils.sheet_to_json(ws, { defval: '', header: 1 });
-      if (!brut.length) return [];
+      if (!brut.length) return { headers:[], rows:[] };
 
-      console.log(`[DNB Import] Feuille "${nom}" — ${brut.length} lignes brutes`);
-      console.log(`[DNB Import] Ligne 0:`, brut[0]);
-      console.log(`[DNB Import] Ligne 1:`, brut[1]);
+      console.log('[DNB Import] Feuille "' + nom + '" — ' + brut.length + ' lignes brutes');
+      console.log('[DNB Import] L0:', JSON.stringify(brut[0]));
+      console.log('[DNB Import] L1:', JSON.stringify(brut[1]));
 
-      // Mots-clés qui signalent une ligne d'en-tête de données réelles
-      const motsClesEntete = /rang|nom|pr.?nom|classe|jury|enseignant|salle|langue|amenag|binome|sujet|parcours|n.*jury/i;
-
-      // Trouver l'index de la ligne d'en-tête (première ligne qui contient
-      // au moins 2 cellules correspondant à des mots-clés)
-      let idxEntete = 0;
+      const motsCles = /rang|nom|prenom|pr|classe|jury|enseignant|salle|langue|amenag|binome|sujet|parcours/i;
+      let idxHeader = 0;
       for (let i = 0; i < Math.min(brut.length, 5); i++) {
-        const ligne = brut[i];
-        const nb = ligne.filter(c => motsClesEntete.test(String(c || ''))).length;
-        console.log(`[DNB Import] Ligne ${i} → ${nb} mots-clés trouvés`);
-        if (nb >= 2) { idxEntete = i; break; }
+        const nb = brut[i].filter(c => motsCles.test(String(c||''))).length;
+        console.log('[DNB Import] L' + i + ' → ' + nb + ' mots-clés');
+        if (nb >= 2) { idxHeader = i; break; }
       }
 
-      console.log(`[DNB Import] En-tête détecté à la ligne ${idxEntete}:`, brut[idxEntete]);
+      const headers = brut[idxHeader].map(c => String(c === null || c === undefined ? '' : c));
+      const rows    = brut.slice(idxHeader + 1)
+                         .filter(r => r.some(c => String(c||'').trim() !== ''));
 
-      // Les en-têtes sont à idxEntete, les données commencent à idxEntete+1
-      const entetes = brut[idxEntete].map(c => this._normCle(String(c || '')));
-      const lignesDonnees = brut.slice(idxEntete + 1);
+      console.log('[DNB Import] Headers:', headers);
+      console.log('[DNB Import] Nb lignes données:', rows.length);
+      if (rows.length > 0) console.log('[DNB Import] Ligne données[0]:', rows[0]);
 
-      console.log(`[DNB Import] Clés normalisées:`, entetes);
-      console.log(`[DNB Import] Première ligne de données:`, lignesDonnees[0]);
+      return { headers, rows };
+    };
 
-      // Construire les objets {clé_normalisée: valeur}
-      return lignesDonnees
-        .filter(ligne => ligne.some(c => String(c || '').trim() !== '')) // ignorer lignes vides
-        .map(ligne => {
-          const r = {};
-          entetes.forEach((cle, i) => {
-            if (cle) r[cle] = ligne[i] !== undefined ? ligne[i] : '';
-          });
-          return r;
-        });
+    // Trouver l'index d'une colonne parmi plusieurs alias possibles
+    const colIdx = (headers, ...aliases) => {
+      const nc = s => (s||'').toString().toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+      for (const a of aliases) {
+        const k = nc(a);
+        // Match exact normalisé
+        let idx = headers.findIndex(h => nc(h) === k);
+        if (idx >= 0) return idx;
+        // Match préfixe normalisé (pour "Enseignant 1 (Civ. NOM)" vs "enseignant1")
+        if (k.length >= 4) {
+          idx = headers.findIndex(h => nc(h).startsWith(k));
+          if (idx >= 0) return idx;
+        }
+      }
+      return -1;
+    };
+
+    // Valeur d'une cellule par index de colonne (-1 = absent)
+    const cellVal = (row, idx) => {
+      if (idx < 0 || idx >= row.length) return '';
+      const v = row[idx];
+      if (v === null || v === undefined) return '';
+      return String(v).trim();
     };
 
     // ── Élèves ─────────────────────────────────────────────────
-    const rowsEleves = feuilleEnObjets(nomEleves);
+    const { headers: hE, rows: rowsEleves } = lireFeuille(nomEleves);
     const eleves = [];
 
-    rowsEleves.forEach((row) => {
-      // Rev.3 : NOM et Prénom dans deux colonnes séparées
-      // Priorité : colonnes distinctes → fallback colonne unique "NOM Prénom"
-      let nom    = this._val(row, 'nom', 'name');
-      let prenom = this._val(row, 'prénom', 'prenom', 'firstname');
+    // Trouver les index des colonnes Élèves une seule fois
+    const iE = {
+      nom      : colIdx(hE, 'nom', 'name'),
+      prenom   : colIdx(hE, 'prénom', 'prenom', 'firstname'),
+      classe   : colIdx(hE, 'classe', 'class', 'group', 'niveau'),
+      langue   : colIdx(hE, 'langue vivante', 'langue', 'lv', 'language'),
+      sujet    : colIdx(hE, 'sujet', 'titre', 'thème', 'theme', 'subject'),
+      parcours : colIdx(hE, 'choix parcours', 'parcours', 'type'),
+      binome   : colIdx(hE, 'binôme', 'binome', 'duo', 'partenaire', 'binom'),
+      amenag   : colIdx(hE, 'aménagement', 'amenagement', 'tiers'),
+    };
+    console.log('[DNB Import] Index colonnes Élèves:', iE);
 
-      // Fallback : tout dans une seule colonne "NOM Prénom" ou "NOM prénom"
-      if (!prenom && !nom) {
-        const nomComplet = this._val(row, 'nom prénom', 'nomprenom', 'eleve', 'candidat');
-        if (nomComplet) {
-          const parts = nomComplet.trim().split(/\s+/);
-          nom    = parts[0] || '';
-          prenom = parts.slice(1).join(' ');
+    rowsEleves.forEach(row => {
+      let nom    = cellVal(row, iE.nom);
+      let prenom = cellVal(row, iE.prenom);
+
+      // Fallback : tout dans une seule colonne
+      if (!nom && !prenom) {
+        const complet = cellVal(row, colIdx(hE, 'nom prénom', 'nomprenom', 'eleve', 'candidat'));
+        if (complet) {
+          const parts = complet.trim().split(/\s+/);
+          nom = parts[0]; prenom = parts.slice(1).join(' ');
         }
       }
-      // Cas où "nom" contient en réalité "NOM Prénom" (ancienne version Excel)
       if (nom && !prenom && nom.includes(' ')) {
         const parts = nom.trim().split(/\s+/);
-        nom    = parts[0];
-        prenom = parts.slice(1).join(' ');
+        nom = parts[0]; prenom = parts.slice(1).join(' ');
       }
 
-      // Ignorer les lignes de titre ou vides
-      const nomNorm = nom.toLowerCase();
-      if (!nom || nomNorm === 'nom' || nomNorm === 'rang' || nomNorm.startsWith('oral')) return;
+      if (!nom || /^(nom|rang|oral)/i.test(nom.trim())) return;
 
-      const amenCol = this._val(row, 'aménagement','amenagement','aménagements','tiers','amenag');
-      const { amenagement, prioritaire } = this._parseAmenagement(amenCol);
-
-      // Normaliser la langue : capitaliser la première lettre, trim
-      const langueRaw = this._val(row, 'langue vivante', 'languevivante', 'langue', 'lv', 'language');
+      const { amenagement, prioritaire } = this._parseAmenagement(cellVal(row, iE.amenag));
+      const langueRaw = cellVal(row, iE.langue);
       const langue = langueRaw ? langueRaw.charAt(0).toUpperCase() + langueRaw.slice(1).toLowerCase() : '';
 
       eleves.push({
-        nom    : nom.trim().toUpperCase(),
-        prenom : prenom.trim(),
-        classe   : this._val(row, 'classe', 'class', 'group', 'niveau'),
+        nom        : nom.trim().toUpperCase(),
+        prenom     : prenom.trim(),
+        classe     : cellVal(row, iE.classe),
         langue,
-        sujet    : this._val(row, 'sujet', 'titre', 'thème', 'theme', 'subject'),
-        parcours : this._val(row, 'choix parcours', 'parcours', 'type'),
-        binomeAvec : this._val(row, 'binôme', 'binome', 'duo', 'partenaire', 'binôme (nom prénom)', 'binom'),
+        sujet      : cellVal(row, iE.sujet),
+        parcours   : cellVal(row, iE.parcours),
+        binomeAvec : cellVal(row, iE.binome),
         amenagement,
         prioritaire,
       });
     });
 
     // ── Jurys ──────────────────────────────────────────────────
-    const rowsJurys = feuilleEnObjets(nomJurys);
+    // ── Jurys ──────────────────────────────────────────────────
+    const { headers: hJ, rows: rowsJurys } = lireFeuille(nomJurys);
     const jurys = [];
 
-    rowsJurys.forEach((row) => {
-      // 'enseignant1' matchera 'enseignant1civnom', 'enseignant1nomprenom', etc.
-      // via le match par préfixe de _val
-      const ens1 = this._val(row,
-        'enseignant1', 'enseignant 1', 'professeur1', 'professeur 1', 'prof1', 'enseignant', 'nom');
-      const ens2 = this._val(row,
-        'enseignant2', 'enseignant 2', 'professeur2', 'professeur 2', 'prof2');
+    // Trouver les index des colonnes Jurys une seule fois
+    const iJ = {
+      ens1   : colIdx(hJ, 'enseignant1', 'enseignant 1', 'professeur1', 'professeur 1', 'prof1', 'enseignant'),
+      ens2   : colIdx(hJ, 'enseignant2', 'enseignant 2', 'professeur2', 'professeur 2', 'prof2'),
+      salle  : colIdx(hJ, 'salle', 'room', 'local'),
+      langue : colIdx(hJ, 'langue vivante', 'langue', 'lv', 'language'),
+      heure  : colIdx(hJ, 'heure', 'heure de début', 'début', 'debut', 'start'),
+    };
+    console.log('[DNB Import] Index colonnes Jurys:', iJ);
+    console.log('[DNB Import] Headers Jurys:', hJ);
 
-      // Ignorer lignes vides et ligne de titre ("Enseignant 1", "N° Jury"…)
+    rowsJurys.forEach((row, ri) => {
+      const ens1 = cellVal(row, iJ.ens1);
+      const ens2 = cellVal(row, iJ.ens2);
+      console.log('[DNB Import] Jury row ' + ri + ': ens1=' + ens1 + ' ens2=' + ens2);
+
       if (!ens1) return;
-      const ens1Norm = ens1.toLowerCase();
-      if (ens1Norm.startsWith('enseignant') || ens1Norm.startsWith('n°') ||
-          ens1Norm.startsWith('jury') || ens1Norm === 'nom') return;
 
       const nomJury = ens2 ? `${ens1} / ${ens2}` : ens1;
 
-      // Heure : fraction Excel ou HH:MM
-      let heureDebut = this._val(row, 'heure', 'heure de début', 'heuredebut', 'début', 'debut', 'start');
+      let heureDebut = cellVal(row, iJ.heure);
       if (heureDebut && !heureDebut.includes(':')) {
         heureDebut = this._excelTimeToHHMM(heureDebut);
       }
       heureDebut = heureDebut || this.params.heureDebut;
 
-      const salle = this._val(row, 'salle', 'room', 'local', 'n° salle', 'numero salle');
+      const salle = cellVal(row, iJ.salle);
 
-      // Normaliser la langue : même casse que les élèves (première lettre majuscule)
-      const langueRaw = this._val(row, 'langue vivante', 'languevivante', 'langue', 'lv', 'language');
+      const langueRaw = cellVal(row, iJ.langue);
       const langue = langueRaw
         ? langueRaw.charAt(0).toUpperCase() + langueRaw.slice(1).toLowerCase()
         : '';
 
-      jurys.push({
-        nom     : nomJury,
-        matiere : this._val(row, 'matière', 'matiere', 'discipline', 'subject'),
-        langue,   // '' = jury sans langue → élèves sans langue UNIQUEMENT (règle stricte)
-        salle,
-        heureDebut,
-        capacite : 0,   // calculé automatiquement par le moteur
-      });
+      jurys.push({ nom: nomJury, matiere: '', langue, salle, heureDebut, capacite: 0 });
     });
 
     console.log('[DNB Import] rowsJurys.length =', rowsJurys.length);
