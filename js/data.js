@@ -533,6 +533,11 @@ const AppData = {
       });
     });
 
+    console.log('[DNB Import] rowsJurys.length =', rowsJurys.length);
+    if (rowsJurys.length > 0) console.log('[DNB Import] rowsJurys[0] =', JSON.stringify(rowsJurys[0]));
+    console.log('[DNB Import] jurys parsés =', jurys.length, jurys.map(j=>j.nom));
+    console.log('[DNB Import] eleves parsés =', eleves.length);
+
     if (eleves.length === 0) avert.push('Aucun élève valide trouvé. Vérifiez les colonnes de la feuille Élèves.');
     if (jurys.length  === 0) avert.push('Aucun jury valide trouvé. Vérifiez les colonnes de la feuille Jurys.');
 

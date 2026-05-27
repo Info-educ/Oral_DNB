@@ -483,10 +483,10 @@
 
   <div class="modal-backdrop" id="modal-backdrop" hidden aria-hidden="true"></div>
 
-  <script src="js/data.js?v=5"></script>
-  <script src="js/ui.js?v=5"></script>
-  <script src="js/affectation.js?v=5"></script>
-  <script src="js/print.js?v=5"></script>
+  <script src="js/data.js?v=6"></script>
+  <script src="js/ui.js?v=6"></script>
+  <script src="js/affectation.js?v=6"></script>
+  <script src="js/print.js?v=6"></script>
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
@@ -494,9 +494,11 @@
     [1,2,3].forEach(n => {
       const cb     = document.getElementById(`param-pause${n}-active`);
       const fields = document.getElementById(`pause${n}-fields`);
+      const bloc   = cb ? cb.closest('.pause-bloc') : null;
       if (!cb || !fields) return;
       const toggle = () => {
-        fields.style.opacity  = cb.checked ? '1' : '0.4';
+        fields.classList.toggle('disabled', !cb.checked);
+        if (bloc) bloc.classList.toggle('active', cb.checked);
         fields.querySelectorAll('input').forEach(i => i.disabled = !cb.checked);
       };
       toggle();
