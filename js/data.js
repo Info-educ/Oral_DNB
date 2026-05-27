@@ -297,12 +297,28 @@ const AppData = {
 
   /**
    * Trouve la valeur d'une cellule parmi plusieurs alias de noms de colonnes.
+   * Stratégie : match exact d'abord, puis match par préfixe (pour les colonnes
+   * comme "Enseignant 1 (Civ. NOM)" ou "Enseignant 1 (NOM Prénom)" dont la
+   * partie entre parenthèses peut varier selon les versions du fichier Excel).
    */
   _val(row, ...alias) {
+    const keys = Object.keys(row);
     for (const a of alias) {
       const k = this._normCle(a);
+      // 1. Match exact
       if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
         return String(row[k]).trim();
+      }
+      // 2. Match par préfixe : chercher une clé qui commence par k
+      //    Ex. : alias 'enseignant1' matche 'enseignant1civnom', 'enseignant1nomprenom'…
+      if (k.length >= 4) {
+        const found = keys.find(rk => rk.startsWith(k) && rk !== k);
+        if (found !== undefined) {
+          const v = row[found];
+          if (v !== undefined && v !== null && String(v).trim() !== '') {
+            return String(v).trim();
+          }
+        }
       }
     }
     return '';
@@ -493,12 +509,12 @@ const AppData = {
     const jurys = [];
 
     rowsJurys.forEach((row) => {
+      // 'enseignant1' matchera 'enseignant1civnom', 'enseignant1nomprenom', etc.
+      // via le match par préfixe de _val
       const ens1 = this._val(row,
-        'enseignant 1 (nom prénom)', 'enseignant 1', 'enseignant1',
-        'professeur 1', 'prof1', 'enseignant', 'nom');
+        'enseignant1', 'enseignant 1', 'professeur1', 'professeur 1', 'prof1', 'enseignant', 'nom');
       const ens2 = this._val(row,
-        'enseignant 2 (nom prénom)', 'enseignant 2', 'enseignant2',
-        'professeur 2', 'prof2');
+        'enseignant2', 'enseignant 2', 'professeur2', 'professeur 2', 'prof2');
 
       // Ignorer lignes vides et ligne de titre ("Enseignant 1", "N° Jury"…)
       if (!ens1) return;
