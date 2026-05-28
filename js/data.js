@@ -489,7 +489,14 @@ const AppData = {
         nom = parts[0]; prenom = parts.slice(1).join(' ');
       }
 
-      if (!nom || /^(nom|rang|oral)/i.test(nom.trim())) return;
+      // Ignorer uniquement les lignes de titre (valeur exacte 'nom', 'rang',
+      // ou ligne titre genre 'ORAL DNB 2025…') — PAS les vrais noms d'élèves
+      const nomTrim = nom.trim();
+      if (!nomTrim) return;
+      const nomLower = nomTrim.toLowerCase();
+      if (nomLower === 'nom' || nomLower === 'rang' ||
+          nomLower === 'name' || nomLower === 'élève' ||
+          nomLower.startsWith('oral dnb')) return;
 
       const { amenagement, prioritaire } = this._parseAmenagement(cellVal(row, iE.amenag));
       const langueRaw = cellVal(row, iE.langue);

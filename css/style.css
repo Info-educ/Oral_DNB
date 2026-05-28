@@ -538,3 +538,379 @@ dialog.modal::backdrop { display: none; }
 .unsaved-banner.visible {
   display: block;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Rev.6 — Paramètres : nav-item sidebar + bandeau affectation
+═══════════════════════════════════════════════════════════ */
+
+/* ── Séparateur dans la nav sidebar ────────────────────── */
+.nav-separator {
+  height: 1px;
+  background: rgba(255,255,255,.12);
+  margin: .5rem .75rem;
+  flex-shrink: 0;
+}
+
+/* ── Nav-item Paramètres — style distinct ───────────────── */
+.nav-item-params {
+  color: rgba(255,255,255,.8) !important;
+  font-weight: 600 !important;
+  letter-spacing: .01em;
+  border-left-color: transparent;
+  background: rgba(255,255,255,.06);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  margin-right: .5rem;
+  transition: background var(--transition), color var(--transition);
+}
+.nav-item-params:hover {
+  background: rgba(255,183,0,.15) !important;
+  color: var(--amber-400) !important;
+  border-left-color: var(--amber-400) !important;
+}
+.nav-item-params .nav-item-icon {
+  font-size: 1.2em;
+}
+
+/* ── Bandeau paramètres (onglet Affectation) ────────────── */
+.params-bandeau {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  background: var(--blue-900);
+  border-radius: var(--radius-lg);
+  padding: .875rem 1.25rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  box-shadow: var(--shadow-sm);
+}
+
+.params-bandeau-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.5rem;
+  flex: 1;
+}
+
+.params-bandeau-item {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  min-width: 90px;
+}
+
+.params-bandeau-label {
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: rgba(255,255,255,.45);
+}
+
+.params-bandeau-value {
+  font-size: .9rem;
+  color: var(--white);
+  font-weight: 500;
+}
+.params-bandeau-value strong {
+  color: var(--amber-400);
+  font-weight: 700;
+}
+
+.params-bandeau-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(255,255,255,.1);
+  border: 1.5px solid rgba(255,255,255,.3);
+  color: var(--white);
+  font-family: var(--font-ui);
+  font-size: .82rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background var(--transition), border-color var(--transition);
+}
+.params-bandeau-btn:hover {
+  background: rgba(255,183,0,.2);
+  border-color: var(--amber-400);
+  color: var(--amber-400);
+}
+.params-bandeau-btn:focus-visible {
+  outline: 3px solid var(--amber-400);
+  outline-offset: 2px;
+}
+
+/* Responsive : bandeau empilé sur petit écran */
+@media (max-width: 900px) {
+  .params-bandeau { flex-direction: column; align-items: flex-start; }
+  .params-bandeau-btn { width: 100%; justify-content: center; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Rev.7 — Confirmation binômes flous (fuzzy matching)
+═══════════════════════════════════════════════════════════ */
+
+.binomes-intro {
+  font-size: .875rem;
+  color: var(--gray-600, #4b5563);
+  line-height: 1.6;
+  padding: .75rem 1rem;
+  background: var(--amber-100);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--amber-400);
+  margin-bottom: 1rem;
+}
+
+.binome-flou-card {
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  margin-bottom: .75rem;
+  background: var(--white);
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.binome-flou-card.bfc-confirmed {
+  border-color: var(--success);
+  background: var(--success-bg);
+}
+
+.binome-flou-card.bfc-rejected {
+  border-color: var(--gray-300);
+  background: var(--gray-50);
+  opacity: .7;
+}
+
+.bfc-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-bottom: .6rem;
+}
+
+.bfc-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: .2rem .6rem;
+  border-radius: 99px;
+  font-size: .72rem;
+  font-weight: 700;
+  background: var(--amber-100);
+  color: #92400e;
+  border: 1px solid var(--amber-400);
+}
+
+.bfc-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .75rem;
+  margin-bottom: .75rem;
+}
+
+.bfc-eleve, .bfc-suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+
+.bfc-label {
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--gray-400);
+}
+
+.bfc-eleve strong, .bfc-suggestion strong {
+  font-size: .95rem;
+  color: var(--gray-900);
+}
+
+.bfc-eleve em {
+  font-size: .82rem;
+  color: var(--gray-500);
+  font-style: normal;
+}
+
+.bfc-suggestion {
+  background: var(--blue-50);
+  border: 1px solid var(--blue-100);
+  border-radius: var(--radius);
+  padding: .5rem .75rem;
+}
+
+.bfc-suggestion strong { color: var(--blue-800); }
+
+.bfc-actions {
+  display: flex;
+  gap: .5rem;
+  justify-content: flex-end;
+}
+
+@media (max-width: 560px) {
+  .bfc-body { grid-template-columns: 1fr; }
+  .bfc-actions { flex-direction: column; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Rev.8 — Modal résultat d'affectation
+═══════════════════════════════════════════════════════════ */
+
+/* ── Résumé ─────────────────────────────────────────────── */
+.resultat-resume {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  margin-bottom: .25rem;
+}
+.resultat-resume-ok {
+  background: var(--success-bg);
+  border: 1.5px solid #86efac;
+}
+.resultat-resume-icon {
+  font-size: 1.75rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--success);
+  color: white;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-weight: 900;
+}
+.resultat-resume-titre {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #14532d;
+}
+.resultat-resume-sous {
+  font-size: .8rem;
+  color: #166534;
+  margin-top: 2px;
+}
+
+/* ── Stats rapides ──────────────────────────────────────── */
+.resultat-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .75rem;
+}
+.resultat-stat {
+  background: var(--gray-50);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: .875rem 1rem;
+  text-align: center;
+}
+.resultat-stat-warn {
+  background: var(--error-bg);
+  border-color: #fca5a5;
+}
+.resultat-stat-val {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--blue-900);
+  line-height: 1;
+  margin-bottom: .2rem;
+}
+.resultat-stat-warn .resultat-stat-val { color: var(--error); }
+.resultat-stat-label {
+  font-size: .75rem;
+  color: var(--gray-500);
+  font-weight: 600;
+}
+
+/* ── Titres de section dans la modal ───────────────────── */
+.resultat-section-titre {
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--blue-900);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: .6rem;
+  padding-bottom: .4rem;
+  border-bottom: 1.5px solid var(--gray-200);
+}
+
+/* ── Avertissements ─────────────────────────────────────── */
+.resultat-avert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: .6rem .75rem;
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  border: 1px solid var(--amber-100);
+  margin-bottom: .4rem;
+  font-size: .85rem;
+  line-height: 1.5;
+}
+.resultat-avert-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.resultat-avert-text { color: var(--gray-700); flex: 1; }
+
+/* ── Répartition par jury ───────────────────────────────── */
+.repartition-grille {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: .6rem;
+}
+.repartition-item {
+  background: var(--white);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: .75rem 1rem;
+}
+.repartition-item-high { border-color: var(--amber-400); background: var(--amber-100); }
+.repartition-item-over { border-color: var(--error); background: var(--error-bg); }
+.repartition-jury-nom {
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--blue-900);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repartition-jury-meta {
+  font-size: .72rem;
+  color: var(--gray-400);
+  margin-bottom: .5rem;
+}
+.repartition-barre-wrap {
+  height: 6px;
+  background: var(--gray-200);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: .4rem;
+}
+.repartition-barre {
+  height: 100%;
+  background: var(--blue-500);
+  border-radius: 99px;
+  transition: width .4s ease;
+}
+.repartition-item-high .repartition-barre { background: var(--warning); }
+.repartition-item-over .repartition-barre { background: var(--error); }
+.repartition-chiffres {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: .8rem;
+  color: var(--gray-600);
+}
+.repartition-pct {
+  font-size: .72rem;
+  color: var(--gray-400);
+}
+
+@media (max-width: 560px) {
+  .resultat-stats-grid { grid-template-columns: repeat(2,1fr); }
+  .repartition-grille  { grid-template-columns: 1fr; }
+}

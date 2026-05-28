@@ -42,6 +42,15 @@
           <span class="nav-item-icon">🖨</span>
           <span class="nav-item-label">Impressions</span>
         </button>
+
+        <!-- Séparateur -->
+        <div class="nav-separator"></div>
+
+        <!-- Paramètres comme nav-item prominent -->
+        <button class="nav-item nav-item-params" id="btn-open-params-nav" aria-label="Ouvrir les paramètres">
+          <span class="nav-item-icon">⚙</span>
+          <span class="nav-item-label">Paramètres</span>
+        </button>
       </nav>
 
       <div class="sidebar-actions">
@@ -65,7 +74,7 @@
           <input type="file" id="input-import-json" accept=".json" hidden />
         </label>
 
-        <button class="sidebar-btn sidebar-btn-params" id="btn-open-params">⚙ Paramètres</button>
+        <!-- Paramètres accessible via la nav ci-dessus et depuis l'onglet Affectation -->
       </div>
 
       <!-- Bannière non sauvegardé (visible sous la sidebar) -->
@@ -144,20 +153,48 @@
           <div class="section-header">
             <div>
               <h2 class="section-title">Affectation automatique</h2>
-              <p class="section-desc">L'algorithme respecte la langue vivante, les binômes, les aménagements, les passages prioritaires et les pauses. Résultat modifiable à la volée.</p>
+              <p class="section-desc">L'algorithme respecte la langue vivante, les binômes, les aménagements, les passages prioritaires et les pauses.</p>
             </div>
             <button class="btn btn-primary" id="btn-lancer-affectation">⚡ Lancer l'affectation</button>
           </div>
+
+          <!-- ── Bandeau paramètres ─────────────────────────────── -->
+          <div class="params-bandeau" id="params-bandeau">
+            <div class="params-bandeau-grid">
+              <div class="params-bandeau-item">
+                <span class="params-bandeau-label">Plage horaire</span>
+                <span class="params-bandeau-value"><strong id="pb-debut">—</strong> → <strong id="pb-fin">—</strong></span>
+              </div>
+              <div class="params-bandeau-item">
+                <span class="params-bandeau-label">Solo</span>
+                <span class="params-bandeau-value"><strong id="pb-solo">—</strong> min</span>
+              </div>
+              <div class="params-bandeau-item">
+                <span class="params-bandeau-label">Binôme</span>
+                <span class="params-bandeau-value"><strong id="pb-binome">—</strong> min</span>
+              </div>
+              <div class="params-bandeau-item">
+                <span class="params-bandeau-label">Marge</span>
+                <span class="params-bandeau-value"><strong id="pb-marge">—</strong> min</span>
+              </div>
+              <div class="params-bandeau-item" id="pb-pauses-item">
+                <span class="params-bandeau-label">Pauses actives</span>
+                <span class="params-bandeau-value" id="pb-pauses">—</span>
+              </div>
+              <div class="params-bandeau-item">
+                <span class="params-bandeau-label">Convocation</span>
+                <span class="params-bandeau-value"><strong id="pb-convoc">—</strong> min avant</span>
+              </div>
+            </div>
+            <button class="params-bandeau-btn" id="btn-open-params-affectation" title="Modifier les paramètres">
+              ⚙ Modifier les paramètres
+            </button>
+          </div>
+
+          <!-- ── Calculateur ───────────────────────────────────── -->
           <div class="calc-panel">
             <div class="calc-header">
-              <h3 class="calc-titre">🧮 Calculateur de jurys</h3>
-              <p class="calc-desc">Basé sur les paramètres de durée et de plage horaire (modifiables dans <strong>⚙ Paramètres</strong>).</p>
-              <div class="calc-params-recap">
-                <span>Solo : <strong id="recap-solo">—</strong> min</span>
-                <span>Binôme : <strong id="recap-binome">—</strong> min</span>
-                <span>Plage : <strong id="recap-debut">—</strong> → <strong id="recap-fin">—</strong></span>
-                <span id="recap-pauses-zone"></span>
-              </div>
+              <h3 class="calc-titre">🧮 Calculateur de jurys nécessaires</h3>
             </div>
             <div id="calculateur-result" class="calc-result-zone">
               <p class="calc-attente">Chargez des élèves pour voir le calcul.</p>
@@ -496,12 +533,70 @@
     </div>
   </dialog>
 
+  <!-- MODAL Résultat d'affectation -->
+  <dialog class="modal modal-wide" id="modal-resultat-affectation" aria-labelledby="modal-resultat-title">
+    <div class="modal-inner">
+      <header class="modal-header">
+        <h3 id="modal-resultat-title">⚡ Résultat de l'affectation</h3>
+        <button class="modal-close" aria-label="Fermer" data-close="modal-resultat-affectation">✕</button>
+      </header>
+      <div class="modal-form">
+
+        <!-- Résumé succès/erreur -->
+        <div id="resultat-resume"></div>
+
+        <!-- Statistiques rapides -->
+        <div id="resultat-stats" class="resultat-stats-grid" style="display:none"></div>
+
+        <!-- Avertissements interactifs -->
+        <div id="resultat-avertissements" style="display:none">
+          <h4 class="resultat-section-titre">⚠ Points à vérifier</h4>
+          <div id="resultat-avert-liste"></div>
+        </div>
+
+        <!-- Répartition par jury -->
+        <div id="resultat-repartition" style="display:none">
+          <h4 class="resultat-section-titre">📊 Répartition par jury</h4>
+          <div id="resultat-repartition-contenu"></div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" data-close="modal-resultat-affectation">Fermer</button>
+        <button type="button" class="btn btn-primary" id="btn-resultat-voir-affectation">
+          Voir l'affectation complète →
+        </button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- MODAL Confirmation binômes flous -->
+  <dialog class="modal" id="modal-binomes-flous" aria-labelledby="modal-binomes-title">
+    <div class="modal-inner">
+      <header class="modal-header">
+        <h3 id="modal-binomes-title">🔍 Confirmation des binômes incertains</h3>
+        <button class="modal-close" aria-label="Fermer" data-close="modal-binomes-flous">✕</button>
+      </header>
+      <div class="modal-form">
+        <p class="binomes-intro">
+          L'outil a trouvé des correspondances approximatives pour certains binômes.<br/>
+          <strong>Confirmez ou rejetez chaque proposition</strong> avant de lancer l'affectation.
+        </p>
+        <div id="binomes-flous-liste"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" id="btn-binomes-tout-rejeter">✕ Tout passer en solo</button>
+          <button type="button" class="btn btn-primary" id="btn-binomes-valider">✓ Valider et affecter</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <div class="modal-backdrop" id="modal-backdrop" hidden aria-hidden="true"></div>
 
-  <script src="js/data.js?v=9"></script>
-  <script src="js/ui.js?v=9"></script>
-  <script src="js/affectation.js?v=9"></script>
-  <script src="js/print.js?v=9"></script>
+  <script src="js/data.js?v=13"></script>
+  <script src="js/ui.js?v=13"></script>
+  <script src="js/affectation.js?v=13"></script>
+  <script src="js/print.js?v=13"></script>
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
@@ -523,19 +618,21 @@
     // Mise à jour récap calculateur
     function majRecap() {
       const p = AppData.params;
-      const r = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-      r('recap-solo',   p.dureeSolo);
-      r('recap-binome', p.dureeBinome);
-      r('recap-debut',  p.heureDebut);
-      r('recap-fin',    p.heureFin);
-      // Résumé des pauses actives
-      const pz = document.getElementById('recap-pauses-zone');
-      if (pz) {
-        const actives = p.pauses.filter(p => p.active && p.duree > 0);
-        pz.textContent = actives.length
-          ? `Pauses : ${actives.map(p => `${p.heure} (${p.duree} min)`).join(', ')}`
-          : 'Aucune pause';
-      }
+      const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+      const setHTML = (id, v) => { const el=document.getElementById(id); if(el) el.innerHTML=v; };
+
+      // ── Bandeau paramètres (onglet Affectation) ──
+      set('pb-debut',  p.heureDebut);
+      set('pb-fin',    p.heureFin);
+      set('pb-solo',   p.dureeSolo);
+      set('pb-binome', p.dureeBinome);
+      set('pb-marge',  p.margePassage || 0);
+      set('pb-convoc', p.convocAvant);
+
+      const pausesActives = (p.pauses || []).filter(pa => pa.active && pa.duree > 0);
+      setHTML('pb-pauses', pausesActives.length
+        ? pausesActives.map(pa => `<strong>${pa.heure}</strong>&nbsp;(${pa.duree}&nbsp;min)`).join(' · ')
+        : '<em style="color:var(--gray-400)">Aucune</em>');
     }
     majRecap();
     document.getElementById('form-params')?.addEventListener('submit', () => setTimeout(majRecap, 100));

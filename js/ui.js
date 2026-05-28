@@ -30,7 +30,9 @@ function notifier(message, type = 'success', duration = 4500) {
   zone.appendChild(n);
   if (duration > 0) setTimeout(close, duration);
 }
-window.notifier = notifier;
+window.notifier     = notifier;
+window.ouvrirModal  = ouvrirModal;
+window.fermerModal  = fermerModal;
 
 // ════════════════════════════════════════════════════════════════
 // INDICATEUR NON SAUVEGARDÉ
@@ -268,7 +270,7 @@ const UI = {
       <div class="calc-detail">
         <strong>Détail du calcul :</strong>
         ${calcul.minutesUtiles} min utiles
-        (session ${calcul.dureeSession} min − pause ${AppData.params.pauseDuree} min)
+        (session ${calcul.dureeSession} min − pauses ${(AppData.params.pauses||[]).filter(p=>p.active&&p.duree>0).reduce((s,p)=>s+p.duree,0)} min)
         · ${calcul.nbEleves} élèves
         dont <strong>${calcul.nbBinomiques} en binôme</strong> (${calcul.nbBinomePaires} paires),
         <strong>${calcul.nbAmenagement} aménagements</strong>,
@@ -354,8 +356,6 @@ const UI = {
   _updateStats() {
     const el = $('#stats-affectation'); if (!el) return;
     if (!AppData.affectation.length) { el.textContent=''; return; }
-    // Marquer non sauvegardé si affectation vient d'être calculée
-    if (typeof Unsaved !== 'undefined') Unsaved.marquer();
     const nbAff    = AppData.affectation.reduce((s,c)=>s+c.eleveIds.length,0);
     const nbNonAff = AppData.nbEleves() - nbAff;
     el.innerHTML = `
@@ -539,7 +539,17 @@ function chargerParams() {
 }
 
 function initParams() {
-  $('#btn-open-params').addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
+  // Bouton principal sidebar (conservé pour compatibilité)
+  const btnParams = $('#btn-open-params');
+  if (btnParams) btnParams.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
+
+  // Bouton nav-item paramètres (sidebar)
+  const btnParamsNav = $('#btn-open-params-nav');
+  if (btnParamsNav) btnParamsNav.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
+
+  // Bouton bandeau affectation
+  const btnParamsAff = $('#btn-open-params-affectation');
+  if (btnParamsAff) btnParamsAff.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
   $('#form-params').addEventListener('submit', e => {
     e.preventDefault();
     AppData.saveParams({

@@ -223,7 +223,7 @@ const Print = {
 
           <div class="jury-remarques">
             <strong>Remarques :</strong> En cas d'empêchement ou de question, contactez immédiatement le secrétariat.
-            La pause méridienne est fixée de ${this._esc(AppData.params.pauseHeure)} (durée : ${AppData.params.pauseDuree} min).
+            ${(AppData.params.pauses||[]).filter(p=>p.active&&p.duree>0).map(p=>`Pause ${this._esc(p.heure)} (${p.duree} min)`).join(', ') || 'Aucune pause planifiée'}..
           </div>
         </div>
       `;
@@ -426,7 +426,7 @@ const Print = {
               <li>Confidentialité : ne pas communiquer les notes avant la proclamation</li>
               <li>Neutralité : aucun commentaire sur la prestation devant d'autres élèves</li>
               <li>Absence d'un candidat : noter "ABS" sur la feuille d'émargement</li>
-              <li>Pause méridienne : ${p.pauseHeure} — durée ${p.pauseDuree} min</li>
+              <li>Pauses : ${(p.pauses||[]).filter(pa=>pa.active&&pa.duree>0).map(pa=>`${pa.heure} (${pa.duree} min)`).join(', ') || 'Aucune'}</li>
             </ul>
           </div>
 
