@@ -1730,3 +1730,338 @@ dialog.modal::backdrop { display: none; }
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   LISTING ALPHABÉTIQUE — A3 portrait
+   AFFICHES PORTES — A4 paysage
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Règles @page nommées pour formats spéciaux ─────────────── */
+@page listing-a3 {
+  size: A3 portrait;
+  margin: 1.2cm 1.5cm;
+}
+@page affiche-a4l {
+  size: A4 landscape;
+  margin: 1cm 1.2cm;
+}
+
+@media print {
+
+  /* ── Sélecteurs de page nommée ─────────────────────────────── */
+  .print-page-a3p { page: listing-a3; }
+  .print-page-a4l { page: affiche-a4l; }
+
+  /* ═══════════════════════════════
+     LISTING ALPHABÉTIQUE (A3)
+  ═══════════════════════════════ */
+
+  .listing-page {
+    padding: 0;   /* les marges sont dans @page */
+    font-family: 'Arial', sans-serif;
+  }
+
+  .listing-header {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    gap: .5cm;
+    align-items: center;
+    border-bottom: 2.5pt solid #163566;
+    padding-bottom: .35cm;
+    margin-bottom: .4cm;
+  }
+  .listing-header-left  { display: flex; align-items: center; gap: .3cm; }
+  .listing-header-center { text-align: center; }
+  .listing-header-right { text-align: right; }
+
+  .listing-logo {
+    max-height: 40pt;
+    max-width: 80pt;
+    object-fit: contain;
+  }
+  .listing-etab {
+    font-size: 9pt;
+    font-weight: bold;
+    color: #163566;
+    display: block;
+  }
+  .listing-annee { font-size: 7.5pt; color: #666; }
+
+  .listing-titre {
+    font-size: 9pt;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .listing-sous-titre {
+    font-size: 13pt;
+    font-weight: 900;
+    color: #163566;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    margin: 2pt 0;
+  }
+  .listing-date {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #dc2626 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .listing-page-info { font-size: 8pt; color: #555; font-weight: bold; }
+  .listing-range     { font-size: 7.5pt; color: #888; }
+  .listing-total     { font-size: 9pt; font-weight: bold; color: #163566; }
+
+  /* Tableau listing */
+  .listing-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13pt;
+  }
+  .listing-table thead tr {
+    background: #163566 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .listing-table th {
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    padding: 5pt 8pt;
+    font-size: 10pt;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    font-weight: 700;
+    text-align: left;
+  }
+  .listing-th-rang   { width: 28pt; text-align: center; }
+  .listing-th-nom    { width: auto; }
+  .listing-th-classe { width: 55pt; text-align: center; }
+  .listing-th-heure  { width: 75pt; text-align: center; }
+  .listing-th-salle  { width: 55pt; text-align: center; }
+  .listing-th-jury   { width: 140pt; }
+
+  .listing-row td {
+    padding: 5pt 8pt;
+    border-bottom: .5pt solid #e2e8f0;
+    vertical-align: middle;
+    line-height: 1.3;
+  }
+  .listing-row-even td {
+    background: #f8fafc !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .listing-cell-rang   { text-align: center; font-size: 10pt; color: #999; }
+  .listing-cell-nom    { font-size: 13pt; }
+  .listing-cell-nom strong { font-size: 14pt; letter-spacing: .01em; }
+  .listing-cell-classe { text-align: center; font-size: 12pt; font-weight: 600; color: #163566; }
+  .listing-cell-heure  {
+    text-align: center;
+    font-size: 16pt;
+    font-weight: 900;
+    color: #163566;
+    letter-spacing: .03em;
+  }
+  .listing-cell-salle  {
+    text-align: center;
+    font-size: 18pt;
+    font-weight: 900;
+    color: #dc2626 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .listing-cell-jury { font-size: 10pt; color: #444; }
+
+  .listing-badge-amem {
+    display: inline-block;
+    background: #fef3c7 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: #92400e;
+    border: .5pt solid #fcd34d;
+    font-size: 7pt;
+    padding: 1pt 4pt;
+    border-radius: 3pt;
+    margin-left: 4pt;
+    vertical-align: middle;
+  }
+  .listing-badge-prio {
+    display: inline-block;
+    background: #fce7f3 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: #9d174d;
+    border: .5pt solid #f9a8d4;
+    font-size: 7pt;
+    padding: 1pt 4pt;
+    border-radius: 3pt;
+    margin-left: 4pt;
+    vertical-align: middle;
+  }
+
+  /* ═══════════════════════════════
+     AFFICHE PORTE (A4 paysage)
+  ═══════════════════════════════ */
+
+  .affiche-porte {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: calc(210mm - 2cm);  /* hauteur A4 paysage moins marges */
+    overflow: hidden;
+    font-family: 'Arial', sans-serif;
+  }
+
+  /* Bandeau supérieur */
+  .affiche-top-band {
+    display: flex;
+    align-items: center;
+    gap: .5cm;
+    padding: .3cm .4cm;
+    background: #163566 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: white;
+  }
+  .affiche-logo {
+    max-height: 32pt;
+    max-width: 70pt;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+  }
+  .affiche-etab-bloc {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .affiche-etab {
+    font-size: 11pt;
+    font-weight: bold;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .affiche-epreuve {
+    font-size: 8pt;
+    color: rgba(255,255,255,.8) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .affiche-date-band {
+    font-size: 12pt;
+    font-weight: bold;
+    color: #fde68a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    text-align: right;
+  }
+
+  /* Corps principal : SALLE + JURY */
+  .affiche-corps {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5cm;
+    padding: .3cm .5cm;
+  }
+
+  .affiche-salle-bloc,
+  .affiche-jury-bloc {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .affiche-salle-label,
+  .affiche-jury-label {
+    font-size: 14pt;
+    font-weight: 700;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: #555;
+  }
+
+  .affiche-salle-num {
+    font-size: 100pt;
+    font-weight: 900;
+    line-height: 1;
+    color: #dc2626 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    letter-spacing: -.02em;
+  }
+
+  .affiche-jury-num {
+    font-size: 80pt;
+    font-weight: 900;
+    line-height: 1;
+    color: #163566 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .affiche-langue {
+    font-size: 16pt;
+    font-weight: bold;
+    color: #163566;
+    background: #e0e7ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    padding: 3pt 12pt;
+    border-radius: 4pt;
+    margin-top: 4pt;
+  }
+
+  /* Séparateur vertical entre salle et jury */
+  .affiche-corps::after {
+    content: '';
+    position: absolute;
+    width: 1.5pt;
+    height: 60%;
+    background: #e2e8f0;
+  }
+  /* (pas de position absolute dans print — utiliser border) */
+  .affiche-salle-bloc {
+    border-right: 1.5pt solid #e2e8f0;
+    padding-right: 1.5cm;
+  }
+  .affiche-jury-bloc {
+    padding-left: 1.5cm;
+  }
+
+  /* Bandeau infos bas */
+  .affiche-infos {
+    display: flex;
+    gap: .4cm;
+    padding: .3cm .5cm;
+    background: #f8fafc !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    border-top: 1.5pt solid #e2e8f0;
+  }
+  .affiche-info-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .affiche-info-label {
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #888;
+    font-weight: 600;
+  }
+  .affiche-info-val {
+    font-size: 10pt;
+    font-weight: bold;
+    color: #163566;
+    margin-top: 2pt;
+  }
+}
+

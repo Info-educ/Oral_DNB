@@ -970,11 +970,13 @@ function initExportExcel() {
 
 function initImpressions() {
   const map = {
-    'btn-print-convoc-eleves': () => Print.convocationsEleves(),
-    'btn-print-convoc-jurys' : () => Print.convocationsJurys(),
-    'btn-print-recap'        : () => Print.recapitulatif(),
-    'btn-print-emargement'   : () => Print.feuilleEmargement(),
-    'btn-print-consignes'    : () => Print.consignesJury(),
+    'btn-print-convoc-eleves'   : () => Print.convocationsEleves(),
+    'btn-print-convoc-jurys'    : () => Print.convocationsJurys(),
+    'btn-print-recap'           : () => Print.recapitulatif(),
+    'btn-print-emargement'      : () => Print.feuilleEmargement(),
+    'btn-print-consignes'       : () => Print.consignesJury(),
+    'btn-print-listing-alpha'   : () => Print.listingAlphabetique(),
+    'btn-print-affiches-portes' : () => Print.affichesPortes(),
   };
   for (const [id, fn] of Object.entries(map)) {
     const btn = $(`#${id}`); if (btn) btn.addEventListener('click', fn);

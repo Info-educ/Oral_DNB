@@ -944,6 +944,235 @@ const Print = {
     // if (typeof fermerModal === 'function') fermerModal('modal-params-impression');
     if (typeof notifier === 'function') notifier('Paramètres d\'impression sauvegardés.', 'success');
   },
+
+  // ─────────────────────────────────────────────────────────────
+  // 6. LISTING ALPHABÉTIQUE — A3 portrait, très visible, affichage hall
+  // ─────────────────────────────────────────────────────────────
+
+  listingAlphabetique() {
+    if (AppData.affectation.length === 0) {
+      notifier("Lancez l'affectation avant d'imprimer le listing.", 'warning'); return;
+    }
+
+    // Construire la liste triée alphabétiquement
+    const candidats = [];
+    AppData.affectation.forEach(c => {
+      const jury = AppData.getJury(c.juryId);
+      c.eleveIds.forEach(id => {
+        const e = AppData.getEleve(id);
+        if (!e) return;
+        candidats.push({
+          nom       : e.nom,
+          prenom    : e.prenom,
+          classe    : e.classe,
+          heure     : c.heureDebut,
+          juryNom   : jury ? jury.nom : '—',
+          salle     : jury ? jury.salle : '—',
+          amenagement: e.amenagement,
+          prioritaire: e.prioritaire,
+          isBinome  : c.isBinome,
+        });
+      });
+    });
+
+    if (!candidats.length) { notifier('Aucun candidat affecté.', 'warning'); return; }
+
+    // Tri : NOM puis Prénom
+    candidats.sort((a, b) => {
+      const n = a.nom.localeCompare(b.nom, 'fr');
+      return n !== 0 ? n : a.prenom.localeCompare(b.prenom, 'fr');
+    });
+
+    const p   = AppData.params;
+    const cfg = PrintConfig.get();
+
+    // Date de l'épreuve
+    let dateStr = '';
+    if (p.dateEpreuve) {
+      try {
+        const d = new Date(p.dateEpreuve + 'T12:00:00');
+        dateStr = d.toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+        dateStr = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+      } catch { dateStr = p.dateEpreuve; }
+    }
+
+    const typeLabel = p.typeEpreuve === 'DNB_BLANC'
+      ? 'DNB — Blanc' : 'Diplôme National du Brevet';
+
+    const logoHtml = cfg.logoBase64
+      ? `<img src="${cfg.logoBase64}" class="listing-logo" alt="Logo" />`
+      : '';
+
+    // Découper en pages de NB_PAR_PAGE lignes
+    // A3 portrait ≈ 420×297mm → avec marges 1.5cm : zone ≈ 390×265mm
+    // Font 14pt → ligne ≈ 9mm → ~38 lignes. On prend 30 pour lisibilité maximale.
+    const NB_PAR_PAGE = 28;
+    const nbPages = Math.ceil(candidats.length / NB_PAR_PAGE);
+
+    let pages = '';
+
+    for (let p_idx = 0; p_idx < nbPages; p_idx++) {
+      const tranche = candidats.slice(p_idx * NB_PAR_PAGE, (p_idx + 1) * NB_PAR_PAGE);
+      const debut   = p_idx * NB_PAR_PAGE + 1;
+      const fin     = debut + tranche.length - 1;
+
+      const lignes = tranche.map((c, i) => {
+        const rang = debut + i;
+        const flags = [];
+        if (c.amenagement) flags.push('<span class="listing-badge-amem">1/3 tps</span>');
+        if (c.prioritaire)  flags.push('<span class="listing-badge-prio">Prior.</span>');
+        const parity = rang % 2 === 0 ? 'listing-row-even' : '';
+        return `<tr class="listing-row ${parity}">
+          <td class="listing-cell-rang">${rang}</td>
+          <td class="listing-cell-nom"><strong>${this._esc(c.nom)}</strong> ${this._esc(c.prenom)} ${flags.join('')}</td>
+          <td class="listing-cell-classe">${this._esc(c.classe)}</td>
+          <td class="listing-cell-heure">${this._esc(c.heure)}</td>
+          <td class="listing-cell-salle"><strong>${this._esc(c.salle)}</strong></td>
+          <td class="listing-cell-jury">${this._esc(c.juryNom)}</td>
+        </tr>`;
+      }).join('');
+
+      pages += `
+        <div class="print-page print-page-a3p listing-page">
+          <div class="listing-header">
+            <div class="listing-header-left">
+              ${logoHtml}
+              <div>
+                <div class="listing-etab">${this._esc(p.etablissement)}</div>
+                <div class="listing-annee">Année scolaire ${this._esc(p.annee)}</div>
+              </div>
+            </div>
+            <div class="listing-header-center">
+              <div class="listing-titre">${this._esc(typeLabel)}</div>
+              <div class="listing-sous-titre">LISTE DES CANDIDATS — ORDRE ALPHABÉTIQUE</div>
+              ${dateStr ? `<div class="listing-date">${this._esc(dateStr)}</div>` : ''}
+            </div>
+            <div class="listing-header-right">
+              <div class="listing-page-info">Page ${p_idx + 1} / ${nbPages}</div>
+              <div class="listing-range">Candidats ${debut} à ${fin}</div>
+              <div class="listing-total">Total : ${candidats.length}</div>
+            </div>
+          </div>
+          <table class="listing-table">
+            <thead>
+              <tr>
+                <th class="listing-th-rang">#</th>
+                <th class="listing-th-nom">Nom — Prénom</th>
+                <th class="listing-th-classe">Classe</th>
+                <th class="listing-th-heure">Heure de passage</th>
+                <th class="listing-th-salle">Salle</th>
+                <th class="listing-th-jury">Jury</th>
+              </tr>
+            </thead>
+            <tbody>${lignes}</tbody>
+          </table>
+        </div>`;
+    }
+
+    const sommaire = this._pageSommaire('Listing alphabétique (A3)', nbPages, candidats.length);
+    // Pas de sommaire sur le listing affichage hall — on imprime directement
+    this._imprimer(pages);
+  },
+
+
+  // ─────────────────────────────────────────────────────────────
+  // 7. AFFICHES PORTES — A4 paysage, 1 page par salle
+  // ─────────────────────────────────────────────────────────────
+
+  affichesPortes() {
+    if (AppData.affectation.length === 0) {
+      notifier("Lancez l'affectation avant d'imprimer les affiches.", 'warning'); return;
+    }
+
+    const p   = AppData.params;
+    const cfg = PrintConfig.get();
+
+    let dateStr = '';
+    if (p.dateEpreuve) {
+      try {
+        const d = new Date(p.dateEpreuve + 'T12:00:00');
+        dateStr = d.toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+        dateStr = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+      } catch { dateStr = p.dateEpreuve; }
+    }
+
+    const logoHtml = cfg.logoBase64
+      ? `<img src="${cfg.logoBase64}" class="affiche-logo" alt="Logo" />`
+      : '';
+
+    let pages = '';
+    let nbAffiches = 0;
+
+    AppData.jurys.forEach((jury, ji) => {
+      const creneaux = AppData.affectation.filter(c => c.juryId === jury.id).sort((a,b)=>a.ordre-b.ordre);
+      if (!creneaux.length) return;
+
+      const nbCandidats = creneaux.reduce((s,c) => s + c.eleveIds.length, 0);
+      const hDebut  = creneaux[0].heureDebut;
+      const hFinale = creneaux[creneaux.length-1].heureFin;
+
+      // Numéro de jury (rang dans la liste des jurys utilisés)
+      const juryNum = ji + 1;
+
+      // Membres du jury
+      const membres = jury.nom.split('/').map(m => m.trim()).filter(Boolean);
+
+      // Pauses actives
+      const pausesStr = (p.pauses||[])
+        .filter(pa => pa.active && pa.duree > 0)
+        .map(pa => `${pa.heure} (${pa.duree} min)`)
+        .join('  ·  ') || 'Aucune';
+
+      nbAffiches++;
+      pages += `
+        <div class="print-page print-page-a4l affiche-porte">
+          <div class="affiche-top-band">
+            ${logoHtml}
+            <div class="affiche-etab-bloc">
+              <span class="affiche-etab">${this._esc(p.etablissement)}</span>
+              <span class="affiche-epreuve">Oral DNB ${this._esc(p.annee)}</span>
+            </div>
+            ${dateStr ? `<div class="affiche-date-band">${this._esc(dateStr)}</div>` : ''}
+          </div>
+
+          <div class="affiche-corps">
+            <div class="affiche-salle-bloc">
+              <div class="affiche-salle-label">SALLE</div>
+              <div class="affiche-salle-num">${this._esc(jury.salle)}</div>
+            </div>
+
+            <div class="affiche-jury-bloc">
+              <div class="affiche-jury-label">JURY N°</div>
+              <div class="affiche-jury-num">${juryNum}</div>
+              ${jury.langue ? `<div class="affiche-langue">${this._esc(jury.langue)}</div>` : ''}
+            </div>
+          </div>
+
+          <div class="affiche-infos">
+            <div class="affiche-info-item">
+              <span class="affiche-info-label">Enseignant(s)</span>
+              <span class="affiche-info-val">${membres.map(m=>this._esc(m)).join(' &amp; ')}</span>
+            </div>
+            <div class="affiche-info-item">
+              <span class="affiche-info-label">Candidats</span>
+              <span class="affiche-info-val">${nbCandidats}</span>
+            </div>
+            <div class="affiche-info-item">
+              <span class="affiche-info-label">Horaires</span>
+              <span class="affiche-info-val">${this._esc(hDebut)} → ${this._esc(hFinale)}</span>
+            </div>
+            <div class="affiche-info-item">
+              <span class="affiche-info-label">Pause(s)</span>
+              <span class="affiche-info-val">${this._esc(pausesStr)}</span>
+            </div>
+          </div>
+        </div>`;
+    });
+
+    if (!pages) { notifier('Aucun jury avec des candidats.', 'warning'); return; }
+    this._imprimer(pages);
+  },
+
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -1070,6 +1299,5 @@ document.addEventListener('DOMContentLoaded', () => {
     if (radioF) radioF.checked = genre === 'F';
   });
 });
-
 window.Print = Print;
 window.PrintConfig = PrintConfig;
