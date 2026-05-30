@@ -915,6 +915,14 @@ function initExportExcel() {
       catch(err) { notifier(`Erreur export : ${err.message}`,'error'); }
     });
   });
+
+  // Bouton téléchargement modèle vierge
+  document.getElementById('btn-dl-modele')?.addEventListener('click', () => {
+    if (typeof telechargerModeleExcel === 'function') {
+      telechargerModeleExcel();
+      notifier('Modèle Excel téléchargé.', 'success');
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════

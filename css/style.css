@@ -1463,3 +1463,16 @@ dialog.modal::backdrop { display: none; }
   margin-top: .2rem;
   font-style: italic;
 }
+
+/* ── Bouton modèle Excel vierge (sidebar) ───────────────────── */
+.sidebar-btn-modele {
+  background: var(--white);
+  color: var(--blue-700, #1d4ed8);
+  border: 1.5px dashed var(--blue-400, #60a5fa);
+  font-weight: 500;
+}
+.sidebar-btn-modele:hover {
+  background: var(--blue-50, #eff6ff);
+  border-color: var(--blue-600, #2563eb);
+  color: var(--blue-800, #1e40af);
+}
