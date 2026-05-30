@@ -232,12 +232,18 @@ const Affectation = {
   // PHASE 3 — AFFECTATION
   // ──────────────────────────────────────────────────────────────
 
+  /**
+   * Compatibilité jury ↔ élève :
+   *   - élève avec LV  → jury même LV uniquement ('exact')
+   *   - élève sans LV  → jury sans LV ('exact') OU jury avec LV ('fill') — les deux sont acceptés
+   *   - élève avec LV  → jury avec LV différente → 'incompatible'
+   */
   _prioriteLangue(juryLangue, eleveLangue) {
     const jl = (juryLangue  || '').trim().toLowerCase();
     const el = (eleveLangue || '').trim().toLowerCase();
-    if (jl === el) return 'exact';
-    if (jl !== '' && el === '') return 'fill'; // jury avec LV peut compléter avec des élèves sans LV
-    return 'incompatible';
+    if (jl === el) return 'exact';               // même LV, ou les deux vides
+    if (el === '') return 'fill';                 // élève sans LV → tout jury accepté
+    return 'incompatible';                        // LV différentes
   },
 
   _affecter(groupesTries, sansCap = false) {
@@ -248,6 +254,10 @@ const Affectation = {
     const avecLangue = groupesTries.filter(g => g.langue !== '');
     const sansLangue = groupesTries.filter(g => g.langue === '');
 
+    /**
+     * Tente de placer un groupe dans la liste de jurys candidats.
+     * Tri par charge croissante (équilibrage).
+     */
     const placerGroupe = (groupe, jurysCandidats, avertir) => {
       const disponibles = jurysCandidats.filter(j => {
         const plan = plannings.get(j.id);
@@ -262,6 +272,7 @@ const Affectation = {
         }
         return false;
       }
+      // Équilibrage : choisir le jury le moins chargé
       disponibles.sort((a,b) => plannings.get(a.id).nbEleves - plannings.get(b.id).nbEleves);
       const jury = disponibles[0];
       const plan = plannings.get(jury.id);
@@ -269,25 +280,32 @@ const Affectation = {
       return true;
     };
 
-    // Passe 1 : élèves avec langue → jurys de même langue (exact)
+    // Passe 1 : élèves AVEC LV → jury de MÊME LV uniquement
     avecLangue.forEach(groupe => {
       const jCompatibles = AppData.jurys.filter(j => {
         const jl = (j.langue || '').trim().toLowerCase();
         const el = (groupe.langue || '').trim().toLowerCase();
-        return jl === el;
+        return jl === el; // même LV obligatoire
       });
       placerGroupe(groupe, jCompatibles, true);
     });
 
-    // Passe 2 : élèves sans langue → jurys sans langue d'abord, puis jurys avec LV en complément
-    // Règle : un jury avec LV peut faire passer des élèves sans LV si nécessaire
+    // Passe 2 : élèves SANS LV → tous les jurys disponibles (sans LV ou avec LV), équilibrés
+    // Règle métier : un jury avec LV peut tout à fait faire passer un élève sans LV.
+    // On préfère les jurys sans LV s'ils ont de la place (pour ne pas saturer les jurys LV),
+    // mais si tout est plein on utilise indifféremment n'importe quel jury.
     sansLangue.forEach(groupe => {
-      const jSansLangue = AppData.jurys.filter(j => this._prioriteLangue(j.langue, '') === 'exact');
-      if (placerGroupe(groupe, jSansLangue, false)) return;
-      const jAvecLangue = AppData.jurys.filter(j => this._prioriteLangue(j.langue, '') === 'fill');
-      if (placerGroupe(groupe, jAvecLangue, false)) return;
+      // Tentative 1 : jurys sans LV en priorité (évite de saturer les jurys LV)
+      const jSansLV = AppData.jurys.filter(j => (j.langue || '').trim() === '');
+      if (placerGroupe(groupe, jSansLV, false)) return;
+
+      // Tentative 2 : tous les jurys (y compris avec LV) — équilibrage global
+      const tousJurys = AppData.jurys.slice(); // copie pour trier sans muter
+      if (placerGroupe(groupe, tousJurys, false)) return;
+
+      // Aucun jury disponible
       const noms = groupe.eleveIds.map(id => { const e=AppData.getEleve(id); return e?`${e.nom} ${e.prenom}`:'?'; }).join(', ');
-      avertAffect.push(`Aucun jury disponible pour (sans langue) : ${noms}`);
+      avertAffect.push(`Aucun jury disponible pour : ${noms} — vérifiez la capacité des jurys.`);
     });
 
     return { plannings, avertAffect };
@@ -386,9 +404,11 @@ const Affectation = {
     const e = AppData.getEleve(creneau.eleveIds[0]);
     if (e) {
       const prio = this._prioriteLangue(juryCible.langue, e.langue);
+      // 'incompatible' uniquement si l'élève A une LV et que la LV du jury est différente
       if (prio === 'incompatible') {
         return `Incompatibilité de langue (élève: ${e.langue||'sans langue'} / jury: ${juryCible.langue||'sans langue'}).`;
       }
+      // 'fill' = élève sans LV vers jury avec LV → autorisé
     }
 
     const dejaDans = AppData.affectation
@@ -412,6 +432,8 @@ const Affectation = {
     const e = AppData.getEleve(creneau.eleveIds[0]);
     if (e) {
       const prio = this._prioriteLangue(juryCible.langue, e.langue);
+      // 'incompatible' uniquement si l'élève A une LV et que la LV du jury est différente
+      // 'fill' = élève sans LV vers jury avec LV → autorisé
       if (prio === 'incompatible') {
         return `Incompatibilité de langue (élève: ${e.langue||'sans langue'} / jury: ${juryCible.langue||'sans langue'}).`;
       }
