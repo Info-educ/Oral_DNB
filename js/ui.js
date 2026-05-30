@@ -1,15 +1,15 @@
 /**
  * ui.js — Contrôleur interface utilisateur
- * Oral DNB · Collège Joliot Curie  —  Rev.3
+ * Oral DNB · Collège Joliot Curie  —  Rev.6
  *
- * Nouveautés Rev.3 :
- *   - Drag & Drop dans le tableau d'affectation :
- *       glisser une ligne de créneau et la déposer sur une autre
- *       carte de jury pour déplacer le créneau.
- *   - Bouton "Affecter les non-affectés" :
- *       visible quand des élèves restent sans créneau après affectation ;
- *       les place même si ça dépasse l'heure de fin de session.
- *   - Zone de dépôt visuelle sur chaque jury-card pendant le glisser.
+ * Corrections Rev.6 :
+ *   - escHtml définie ici UNIQUEMENT (supprimée de affectation.js)
+ *   - backdrop déclaré dans initModals() pour éviter le null au chargement
+ *   - DnD.reset() appelé dans dragend (cancel par Escape ou sortie fenêtre)
+ *   - Toggle pauses : une seule logique (classList disabled/active)
+ *     chargerParams() utilise la même mécanique que le script inline
+ *   - UI._updateBandeauParams() remplace majRecap() inline (plus de doublon)
+ *   - Listener btn-export-xlsx-impressions retiré du script inline dans index.html
  */
 
 'use strict';
@@ -33,9 +33,9 @@ function notifier(message, type = 'success', duration = 4500) {
   zone.appendChild(n);
   if (duration > 0) setTimeout(close, duration);
 }
-window.notifier     = notifier;
-window.ouvrirModal  = ouvrirModal;
-window.fermerModal  = fermerModal;
+window.notifier    = notifier;
+window.ouvrirModal = ouvrirModal;
+window.fermerModal = fermerModal;
 
 // ════════════════════════════════════════════════════════════════
 // INDICATEUR NON SAUVEGARDÉ
@@ -66,9 +66,15 @@ const Unsaved = {
 };
 window.Unsaved = Unsaved;
 
+// ════════════════════════════════════════════════════════════════
+// UTILITAIRES
+// ════════════════════════════════════════════════════════════════
+
+/** Échappement HTML — défini ici UNIQUEMENT (retiré de affectation.js) */
 function escHtml(str) {
   return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+window.escHtml = escHtml;
 
 function validerFormulaire(regles) {
   let ok = true;
@@ -112,22 +118,26 @@ function initNav() {
 // MODALS
 // ════════════════════════════════════════════════════════════════
 
-const backdrop = $('#modal-backdrop');
+// backdrop est initialisé dans initModals() pour garantir que le DOM est prêt
+let _backdrop = null;
 
 function ouvrirModal(id) {
   const m = $(`#${id}`); if (!m) return;
-  backdrop.hidden = false;
+  if (_backdrop) _backdrop.hidden = false;
   m.showModal ? m.showModal() : m.setAttribute('open','');
   setTimeout(() => { const f=m.querySelector('input:not([type=hidden]),select,textarea'); if(f) f.focus(); }, 60);
 }
 function fermerModal(id) {
   const m = $(`#${id}`); if (!m) return;
   m.close ? m.close() : m.removeAttribute('open');
-  backdrop.hidden = true;
+  // Masquer le backdrop seulement si aucune autre dialog n'est ouverte
+  const autresOuvertes = $$('dialog[open]').length > 0;
+  if (_backdrop && !autresOuvertes) _backdrop.hidden = true;
 }
 function initModals() {
+  _backdrop = $('#modal-backdrop');
   $$('[data-close]').forEach(btn => btn.addEventListener('click', () => fermerModal(btn.dataset.close)));
-  backdrop.addEventListener('click', () => $$('dialog[open]').forEach(m => fermerModal(m.id)));
+  if (_backdrop) _backdrop.addEventListener('click', () => $$('dialog[open]').forEach(m => fermerModal(m.id)));
   document.addEventListener('keydown', e => { if(e.key==='Escape') $$('dialog[open]').forEach(m=>fermerModal(m.id)); });
 }
 
@@ -226,19 +236,15 @@ function renderEleves() {
 // ════════════════════════════════════════════════════════════════
 
 const DnD = {
-  // Index du créneau en cours de glisser (dans AppData.affectation)
   creneauIdx   : null,
-  // Jury source
   juryIdSource : null,
-  // Élément <tr> fantôme
-  ghost        : null,
 
   reset() {
     this.creneauIdx   = null;
     this.juryIdSource = null;
     $$('.jury-card').forEach(c => c.classList.remove('dnd-over', 'dnd-target'));
-    $$('.affec-table tbody tr').forEach(r => r.classList.remove('dnd-dragging'));
-    $$('.dnd-drop-line').forEach(l => l.remove());
+    $$('.affec-table tbody tr').forEach(r => r.classList.remove('dnd-dragging', 'dnd-source-hidden'));
+    $$('.dnd-insert-indicator').forEach(l => l.remove());
   },
 };
 
@@ -254,19 +260,23 @@ const UI = {
     this._updateBandeauParams();
   },
 
+  /** Met à jour le bandeau de paramètres dans l'onglet Affectation */
   _updateBandeauParams() {
     const p = AppData.params;
-    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const set    = (id, v)    => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const setHTML= (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML   = html; };
+
     set('pb-debut',  p.heureDebut);
     set('pb-fin',    p.heureFin);
     set('pb-solo',   p.dureeSolo);
     set('pb-binome', p.dureeBinome);
-    set('pb-marge',  p.margePassage);
+    set('pb-marge',  p.margePassage || 0);
     set('pb-convoc', p.convocAvant);
+
     const pausesActives = (p.pauses||[]).filter(pa => pa.active && pa.duree > 0);
-    set('pb-pauses', pausesActives.length > 0
-      ? pausesActives.map(pa => `${pa.heure} (${pa.duree} min)`).join(', ')
-      : 'Aucune');
+    setHTML('pb-pauses', pausesActives.length
+      ? pausesActives.map(pa => `<strong>${pa.heure}</strong>&nbsp;(${pa.duree}&nbsp;min)`).join(' · ')
+      : '<em style="color:var(--gray-400)">Aucune</em>');
   },
 
   _renderCalculateur() {
@@ -311,7 +321,7 @@ const UI = {
       this._updateStats(); return;
     }
 
-    // ── Panneau non-affectés ─────────────────────────────────────────
+    // ── Panneau non-affectés ──────────────────────────────────────────
     const dejaDansCreneaux = new Set(AppData.affectation.flatMap(c => c.eleveIds));
     const nonAffectes = AppData.eleves.filter(e => !dejaDansCreneaux.has(e.id));
 
@@ -350,7 +360,7 @@ const UI = {
         </div>`;
     }
 
-    // ── Grille des jurys ─────────────────────────────────────────────
+    // ── Grille des jurys ──────────────────────────────────────────────
     const parJury = new Map();
     AppData.jurys.forEach(j => parJury.set(j.id, { jury:j, creneaux:[] }));
     AppData.affectation.forEach((c,idx) => {
@@ -359,7 +369,6 @@ const UI = {
 
     let htmlGrid = '<div class="affectation-grid">';
 
-    // Pauses actives (même logique que affectation.js) : heure cible + durée
     const pausesActives = (AppData.params.pauses || [])
       .filter(p => p.active && p.duree > 0)
       .map(p => ({
@@ -393,8 +402,6 @@ const UI = {
             <tr><th class="th-drag" title="Glisser pour déplacer">⠿</th><th>#</th><th>Début</th><th>Fin</th><th>Candidat(s)</th><th>LV</th><th>Cl.</th><th>Durée</th><th></th></tr>
           </thead><tbody>`;
 
-      // Reconstruction de la timeline pour placer les pauses au bon endroit
-      // On rejoue la même logique adaptative que affectation.js _recalculerTous()
       const marge    = parseInt(AppData.params.margePassage, 10) || 0;
       const pausesRestantes = pausesActives.map(p => ({ ...p, insere: false }));
       let curseur = AppData.enMinutes(jury.heureDebut || AppData.params.heureDebut);
@@ -425,7 +432,7 @@ const UI = {
           }
         }
 
-        // ── Ligne du créneau ─────────────────────────────────────
+        // ── Ligne du créneau ──────────────────────────────────────
         const nomsHtml = c.eleveIds.map(id => {
           const e = AppData.getEleve(id); if(!e) return '?';
           const f = [];
@@ -434,7 +441,6 @@ const UI = {
           return `<span class="eleve-nom">${escHtml(e.nom)} ${escHtml(e.prenom)}</span>${f.join('')}`;
         }).join('<br/>');
 
-        // Langues vivantes des élèves du créneau (badges)
         const languesHtml = c.eleveIds.map(id => {
           const e = AppData.getEleve(id);
           return e && e.langue
@@ -487,12 +493,12 @@ const UI = {
       <span class="stat-item">${AppData.nbJurys()} jury${AppData.nbJurys()>1?'s':''}</span>`;
   },
 
-  // ── Drag & Drop ──────────────────────────────────────────────────────────────
+  // ── Drag & Drop ────────────────────────────────────────────────────────────
 
   _initDragDrop() {
     const container = $('#affectation-result'); if (!container) return;
 
-    // ── Début du glisser ──────────────────────────────────────
+    // ── Début du glisser ──────────────────────────────────
     container.addEventListener('dragstart', e => {
       const row = e.target.closest('.dnd-row');
       if (!row) return;
@@ -506,23 +512,19 @@ const UI = {
       e.dataTransfer.setData('text/plain', String(idx));
 
       row.classList.add('dnd-dragging');
-
-      // Petit délai pour que le fantôme de drag s'affiche avant qu'on masque la ligne
       setTimeout(() => row.classList.add('dnd-source-hidden'), 0);
     });
 
-    // ── Survol d'une zone de dépôt ────────────────────────────
+    // ── Survol d'une zone de dépôt ────────────────────────
     container.addEventListener('dragover', e => {
       const juryCard = e.target.closest('.jury-card');
       if (!juryCard || DnD.creneauIdx === null) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
 
-      // Mettre en évidence la carte survolée
       $$('.jury-card').forEach(c => c.classList.remove('dnd-over'));
       juryCard.classList.add('dnd-over');
 
-      // Indicateur de position d'insertion entre les lignes
       $$('.dnd-insert-indicator').forEach(el => el.remove());
       const targetRow = e.target.closest('.dnd-row');
       if (targetRow && targetRow !== document.querySelector(`.dnd-row[data-creneau-idx="${DnD.creneauIdx}"]`)) {
@@ -539,13 +541,13 @@ const UI = {
       }
     });
 
-    // ── Entrée dans une carte ──────────────────────────────────
+    // ── Entrée dans une carte ──────────────────────────────
     container.addEventListener('dragenter', e => {
       const juryCard = e.target.closest('.jury-card');
       if (juryCard) juryCard.classList.add('dnd-over');
     });
 
-    // ── Sortie d'une carte ─────────────────────────────────────
+    // ── Sortie d'une carte ─────────────────────────────────
     container.addEventListener('dragleave', e => {
       const juryCard = e.target.closest('.jury-card');
       if (!juryCard) return;
@@ -556,7 +558,7 @@ const UI = {
       }
     });
 
-    // ── Dépôt ─────────────────────────────────────────────────
+    // ── Dépôt ─────────────────────────────────────────────
     container.addEventListener('drop', e => {
       e.preventDefault();
       const juryCard = e.target.closest('.jury-card');
@@ -564,7 +566,6 @@ const UI = {
 
       const juryIdCible = parseInt(juryCard.dataset.juryId, 10);
 
-      // Trouver l'index d'insertion (avant quelle ligne ?)
       const indicator = juryCard.querySelector('.dnd-insert-indicator');
       let avantCreneauIdx = null;
       if (indicator) {
@@ -586,19 +587,18 @@ const UI = {
       }
     });
 
-    // ── Fin du glisser (annulation, ex. Escape) ───────────────
-    container.addEventListener('dragend', e => {
-      $$('.dnd-row').forEach(r => r.classList.remove('dnd-dragging', 'dnd-source-hidden'));
-      $$('.dnd-insert-indicator').forEach(el => el.remove());
-      $$('.jury-card').forEach(c => c.classList.remove('dnd-over'));
-      // Si drop n'a pas eu lieu, pas besoin de faire autre chose (DnD.reset() est appelé dans drop)
+    // ── Fin du glisser (annulation, ex. Escape ou sortie fenêtre) ─
+    container.addEventListener('dragend', () => {
+      // dragend se déclenche toujours après drop ou en cas d'annulation
+      // On nettoie systématiquement (DnD.reset est idempotent)
+      DnD.reset();
     });
   },
 };
 window.UI = UI;
 
 // ════════════════════════════════════════════════════════════════
-// MODAL DÉPLACEMENT (conservé pour le bouton ⇄ classique)
+// MODAL DÉPLACEMENT (bouton ⇄ classique)
 // ════════════════════════════════════════════════════════════════
 
 function initModalDeplacement() {
@@ -733,8 +733,18 @@ function peuplerFiltreLangues() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// PARAMÈTRES
+// PARAMÈTRES — toggle pauses unifié
 // ════════════════════════════════════════════════════════════════
+
+/** Active ou désactive visuellement un bloc de pause */
+function _togglePauseBloc(n, actif) {
+  const fields = document.getElementById(`pause${n}-fields`);
+  const bloc   = document.getElementById(`param-pause${n}-active`)?.closest('.pause-bloc');
+  if (!fields) return;
+  fields.classList.toggle('disabled', !actif);
+  if (bloc) bloc.classList.toggle('active', actif);
+  fields.querySelectorAll('input').forEach(i => i.disabled = !actif);
+}
 
 function chargerParams() {
   const p = AppData.params;
@@ -744,7 +754,12 @@ function chargerParams() {
   $('#param-duree-binome').value  = p.dureeBinome;
   $('#param-heure-debut').value   = p.heureDebut;
   $('#param-heure-fin').value     = p.heureFin;
-  const pauses = p.pauses || [{active:true,heure:'10:00',duree:15},{active:true,heure:'12:00',duree:60},{active:false,heure:'15:00',duree:15}];
+
+  const pauses = p.pauses || [
+    {active:true, heure:'10:00',duree:15},
+    {active:true, heure:'12:00',duree:60},
+    {active:false,heure:'15:00',duree:15},
+  ];
   [1,2,3].forEach((n,i) => {
     const pa = pauses[i] || {active:false,heure:'12:00',duree:0};
     const cb = $(`#param-pause${n}-active`);
@@ -753,23 +768,25 @@ function chargerParams() {
     if (cb) cb.checked = !!pa.active;
     if (ph) ph.value   = pa.heure  || '12:00';
     if (pd) pd.value   = pa.duree  || 0;
-    const fields = $(`#pause${n}-fields`);
-    if (fields) {
-      fields.style.opacity = pa.active ? '1' : '0.4';
-      fields.querySelectorAll('input').forEach(inp => inp.disabled = !pa.active);
-    }
+    _togglePauseBloc(n, !!pa.active);
   });
+
   $('#param-convoc-avant').value  = p.convocAvant;
   $('#param-marge-passage').value = p.margePassage;
 }
 
 function initParams() {
-  const btnParams = $('#btn-open-params');
-  if (btnParams) btnParams.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
-  const btnParamsNav = $('#btn-open-params-nav');
-  if (btnParamsNav) btnParamsNav.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
-  const btnParamsAff = $('#btn-open-params-affectation');
-  if (btnParamsAff) btnParamsAff.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
+  // Ouvrir la modal depuis plusieurs points d'entrée
+  ['btn-open-params','btn-open-params-nav','btn-open-params-affectation'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
+  });
+
+  // Toggle pauses dans la modal
+  [1,2,3].forEach(n => {
+    document.getElementById(`param-pause${n}-active`)?.addEventListener('change', e => {
+      _togglePauseBloc(n, e.target.checked);
+    });
+  });
 
   $('#form-params').addEventListener('submit', e => {
     e.preventDefault();
@@ -881,6 +898,7 @@ function initImportExportJSON() {
 // ════════════════════════════════════════════════════════════════
 
 function initExportExcel() {
+  // Un seul listener pour les deux boutons (sidebar + onglet impressions)
   $$('#btn-export-xlsx, #btn-export-xlsx-impressions').forEach(btn => {
     if (!btn) return;
     btn.addEventListener('click', () => {

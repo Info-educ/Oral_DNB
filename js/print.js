@@ -1,14 +1,15 @@
 /**
  * print.js — Génération et impression des documents officiels
- * Oral DNB · Collège Joliot Curie  —  Rev.5
+ * Oral DNB · Collège Joliot Curie  —  Rev.6
  *
- * Nouveautés Rev.5 :
- *   — Paramètres d'impression centraux (PrintConfig) :
- *       logo (base64), signataire (fonction + nom), date, signature PNG
- *   — Chaque document est configurable (sections activables/désactivables,
- *       champs éditables) via la modal "Paramètres d'impression"
- *   — @page margin=0 : suppression de l'en-tête/pied de page navigateur
- *       (date/heure, URL, numéro de page) grâce à des marges gérées en CSS
+ * Corrections Rev.6 :
+ *   — _esc2 remplacée par window.escHtml (défini dans ui.js)
+ *   — Doublon listener btn-consignes-reset supprimé (une seule déclaration)
+ *   — Méthodes mortes supprimées : ouvrirEditeurConsignes(),
+ *     sauvegarderConsignes() (plus de bouton correspondant dans le HTML)
+ *   — Radios pi-genre-m/f retirés de la logique de lecture (le select
+ *     encode déjà le genre dans sa valeur "Libellé|Genre")
+ *   — @page margin=0 : marges gérées en CSS
  */
 
 'use strict';
@@ -19,28 +20,25 @@
 
 const PrintConfig = {
 
-  /** Retourne la config d'impression, avec valeurs par défaut */
   get() {
     const p = AppData.params;
     if (!p.impression) p.impression = {};
     const d = p.impression;
     return {
-      // En-tête
-      logoBase64      : d.logoBase64      || null,          // image base64 ou null
-      // Signataire
+      logoBase64      : d.logoBase64      || null,
       fonctionSign    : d.fonctionSign    || 'Principal adjoint',
+      genreSign       : d.genreSign       || 'M',
       nomSign         : d.nomSign         || '',
-      dateSign        : d.dateSign        || '',             // 'YYYY-MM-DD' ou ''
-      signatureBase64 : d.signatureBase64 || null,          // PNG base64 ou null
-      // Options par document
+      dateSign        : d.dateSign        || '',
+      signatureBase64 : d.signatureBase64 || null,
       convocEleve : {
         afficherSujet       : d.convocEleve?.afficherSujet       ?? true,
         afficherParcours    : d.convocEleve?.afficherParcours    ?? true,
         afficherLangue      : d.convocEleve?.afficherLangue      ?? true,
         afficherAmenagement : d.convocEleve?.afficherAmenagement ?? true,
         afficherBinome      : d.convocEleve?.afficherBinome      ?? true,
-        consignesExtra      : d.convocEleve?.consignesExtra      || [],  // lignes supplémentaires
-        consignesSuppr      : d.convocEleve?.consignesSuppr      || [],  // indices à masquer (0-4)
+        consignesExtra      : d.convocEleve?.consignesExtra      || [],
+        consignesSuppr      : d.convocEleve?.consignesSuppr      || [],
       },
       convocJury : {
         afficherSujet    : d.convocJury?.afficherSujet    ?? true,
@@ -61,13 +59,11 @@ const PrintConfig = {
     };
   },
 
-  /** Sauvegarde la config dans AppData.params.impression */
   set(data) {
     AppData.params.impression = data;
     if (typeof Unsaved !== 'undefined') Unsaved.marquer();
   },
 
-  /** Formate la date de signature pour l'affichage */
   formatDateSign(dateStr) {
     if (!dateStr) return '___________________';
     try {
@@ -95,8 +91,11 @@ const Print = {
     setTimeout(() => { zone.innerHTML = ''; }, 2000);
   },
 
+  /** Utilise escHtml exposé par ui.js */
   _esc(str) {
-    return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return (typeof window.escHtml === 'function')
+      ? window.escHtml(str)
+      : String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   },
 
   _convocHeure(heureDebut) {
@@ -105,10 +104,6 @@ const Print = {
 
   _nomEleve(e) { return `${this._esc(e.nom)} ${this._esc(e.prenom)}`; },
 
-  /**
-   * En-tête commune à tous les documents.
-   * Inclut le logo si disponible, centré à gauche.
-   */
   _entete(titre, sousTitre = '') {
     const p   = AppData.params;
     const cfg = PrintConfig.get();
@@ -135,14 +130,10 @@ const Print = {
       <hr class="print-hr" />`;
   },
 
-  /**
-   * Bloc signataire (pied de convocation).
-   * Affiche : ville+date, fonction, nom, signature PNG si disponible.
-   */
   _blocSignataire() {
     const cfg  = PrintConfig.get();
     const p    = AppData.params;
-    // Extraire la ville depuis le nom de l'établissement (avant le —) ou "Bagneux"
+    const article = cfg.genreSign === 'F' ? 'La' : 'Le';
     const ville = (p.etablissement||'').split('—')[0].replace(/collège|lycée|école/gi,'').trim() || 'Bagneux';
     const date  = PrintConfig.formatDateSign(cfg.dateSign);
     const signatureHtml = cfg.signatureBase64
@@ -153,7 +144,7 @@ const Print = {
       <div class="convoc-footer">
         <div class="convoc-signature">
           <p>Fait à ${this._esc(ville)}, le ${date}</p>
-          <p><strong>${this._esc(cfg.fonctionSign)}</strong></p>
+          <p><strong>${article} ${this._esc(cfg.fonctionSign)}</strong></p>
           ${cfg.nomSign ? `<p>${this._esc(cfg.nomSign)}</p>` : ''}
           ${signatureHtml}
           <p class="print-cachet-label">Cachet de l'établissement :</p>
@@ -172,9 +163,8 @@ const Print = {
 
     const cfg = PrintConfig.get().convocEleve;
 
-    // Consignes de base (indices 0-4), certaines peuvent être masquées
     const consignesBase = [
-      'Présentez-vous à l\'heure de <strong>convocation</strong> indiquée (et non à l\'heure de passage).',
+      'Présentez-vous à l\'heure de <strong>convocation</strong> indiquée (et non à l\'heure de passage) muni(e) de votre <strong>convocation</strong> et d\'une <strong>pièce d\'identité</strong>.',
       'Apportez votre <strong>exposé préparé</strong> (document de présentation autorisé).',
       'Si vous utilisez une <strong>présentation informatique</strong>, vous devez vous assurer <em>les jours précédents</em> que votre présentation fonctionne correctement : <strong>les clés USB ne seront pas autorisées</strong>. Privilégiez un espace de stockage en ligne ou un envoi à votre enseignant.',
       'Les téléphones portables doivent être <strong>éteints et rangés</strong>.',
@@ -208,7 +198,6 @@ const Print = {
         ? AppData.getEleve(creneau.eleveIds.find(id => id !== eleve.id))
         : null;
 
-      // Aménagements
       const amenagements = [];
       if (eleve.amenagement) amenagements.push('Bénéficiaire d\'un tiers-temps (durée majorée)');
       if (eleve.prioritaire)  amenagements.push('Passage prioritaire');
@@ -219,7 +208,6 @@ const Print = {
            </div>`
         : '';
 
-      // Sujet / parcours
       const blocSujet = (cfg.afficherSujet || cfg.afficherParcours) && (eleve.sujet || eleve.parcours)
         ? `<div class="convoc-sujet-bloc">
             ${cfg.afficherParcours && eleve.parcours ? `<div class="convoc-sujet-ligne"><span class="convoc-sujet-label">Parcours choisi :</span> <strong>${this._esc(eleve.parcours)}</strong></div>` : ''}
@@ -227,7 +215,6 @@ const Print = {
            </div>`
         : '';
 
-      // Langue
       const blocLangue = cfg.afficherLangue && eleve.langue
         ? `<div class="convoc-langue">Langue vivante : <strong>${this._esc(eleve.langue)}</strong></div>`
         : '';
@@ -495,7 +482,7 @@ const Print = {
             <tbody>${lignes}</tbody>
           </table>
           <div class="emarg-certif">
-            <p>Je soussigné(e), <strong>${this._esc(jury.nom)}</strong>, certifie avoir fait passer les candidats ci-dessus.</p>
+            <p>Je soussigné${PrintConfig.get().genreSign === 'F' ? 'e' : ''}, <strong>${this._esc(jury.nom)}</strong>, certifie avoir fait passer les candidats ci-dessus.</p>
             <div class="emarg-sign-jury-row">
               <div class="emarg-sign-jury-item"><span>Date :</span><div class="sign-box-date"></div></div>
               <div class="emarg-sign-jury-item large"><span>Signature du jury :</span><div class="sign-box-jury"></div></div>
@@ -544,28 +531,22 @@ const Print = {
   },
 
   // ─────────────────────────────────────────────────────────────
-  // ÉDITEUR CONSIGNES
+  // ÉDITEUR CONSIGNES (intégré dans la modal params impression)
   // ─────────────────────────────────────────────────────────────
-
-  ouvrirEditeurConsignes() {
-    const blocs = this._getConsignes();
-    this._renderEditeurContenu(blocs);
-    if (typeof ouvrirModal === 'function') ouvrirModal('modal-consignes');
-  },
 
   _renderEditeurContenu(blocs) {
     const container = document.getElementById('consignes-editor-content'); if (!container) return;
     container.innerHTML = blocs.map((bloc, bi) => `
       <div class="consigne-edit-bloc" data-bloc="${bi}">
         <div class="consigne-edit-titre-row">
-          <input type="text" class="consigne-edit-titre" value="${_esc2(bloc.titre)}" placeholder="Titre du bloc…" data-bloc="${bi}" />
+          <input type="text" class="consigne-edit-titre" value="${this._esc(bloc.titre)}" placeholder="Titre du bloc…" data-bloc="${bi}" />
           <button class="btn btn-icon btn-del consigne-del-bloc" data-bloc="${bi}" title="Supprimer ce bloc">🗑</button>
         </div>
         <div class="consigne-edit-items" data-bloc="${bi}">
           ${(bloc.items||[]).map((item,ii)=>`
             <div class="consigne-edit-item-row" data-item="${ii}">
               <span class="consigne-edit-bullet">•</span>
-              <input type="text" class="consigne-edit-item" value="${_esc2(item)}" placeholder="Consigne…" data-bloc="${bi}" data-item="${ii}" />
+              <input type="text" class="consigne-edit-item" value="${this._esc(item)}" placeholder="Consigne…" data-bloc="${bi}" data-item="${ii}" />
               <button class="btn btn-icon btn-del consigne-del-item" data-bloc="${bi}" data-item="${ii}" title="Supprimer">✕</button>
             </div>`).join('')}
         </div>
@@ -605,13 +586,6 @@ const Print = {
     return blocs;
   },
 
-  sauvegarderConsignes() {
-    AppData.params.consignesJury = this._lireEditeur();
-    if (typeof Unsaved !== 'undefined') Unsaved.marquer();
-    if (typeof fermerModal === 'function') fermerModal('modal-consignes');
-    if (typeof notifier === 'function') notifier('Consignes sauvegardées.', 'success');
-  },
-
   reinitialiserConsignes() {
     if (!confirm('Remettre les consignes par défaut ?')) return;
     AppData.params.consignesJury = null;
@@ -626,47 +600,57 @@ const Print = {
   ouvrirParamsImpression() {
     const cfg = PrintConfig.get();
 
-    // Signataire
-    _setVal('pi-fonction', cfg.fonctionSign);
+    // Signataire : le select encode "Libellé|Genre"
+    const fonctionVal = cfg.fonctionSign + '|' + cfg.genreSign;
+    const selectFn = document.getElementById('pi-fonction');
+    if (selectFn) {
+      const optMatch = [...selectFn.options].find(o => o.value === fonctionVal);
+      selectFn.value = optMatch ? fonctionVal : cfg.fonctionSign;
+    }
+    // Sync des radios genre (affichage uniquement — la valeur authoritative est dans le select)
+    const radioM = document.getElementById('pi-genre-m');
+    const radioF = document.getElementById('pi-genre-f');
+    if (radioM) radioM.checked = cfg.genreSign !== 'F';
+    if (radioF) radioF.checked = cfg.genreSign === 'F';
+
     _setVal('pi-nom', cfg.nomSign);
     _setVal('pi-date', cfg.dateSign);
 
-    // Logo preview
     _updatePreview('pi-logo-preview', cfg.logoBase64, 'Logo');
     _updatePreview('pi-sign-preview', cfg.signatureBase64, 'Signature');
 
-    // Options convoc élève
     _setCheck('pi-ce-sujet',   cfg.convocEleve.afficherSujet);
     _setCheck('pi-ce-parcours',cfg.convocEleve.afficherParcours);
     _setCheck('pi-ce-langue',  cfg.convocEleve.afficherLangue);
     _setCheck('pi-ce-amem',    cfg.convocEleve.afficherAmenagement);
     _setCheck('pi-ce-binome',  cfg.convocEleve.afficherBinome);
 
-    // Consignes à masquer
     [0,1,2,3,4].forEach(i => _setCheck(`pi-ce-consigne-${i}`, !(cfg.convocEleve.consignesSuppr||[]).includes(i)));
 
-    // Consignes extra
     const extraContainer = document.getElementById('pi-ce-extras');
     if (extraContainer) {
       extraContainer.innerHTML = '';
       (cfg.convocEleve.consignesExtra||[]).forEach((txt,i) => _ajouterLigneExtra(extraContainer, txt, i));
     }
 
-    // Options convoc jury
     _setCheck('pi-cj-sujet',   cfg.convocJury.afficherSujet);
     _setCheck('pi-cj-pauses',  cfg.convocJury.afficherPauses);
     _setCheck('pi-cj-remarque',cfg.convocJury.afficherRemarque);
     _setVal('pi-cj-remarque-texte', cfg.convocJury.remarqueTexte);
 
-    // Options récap
+    // Afficher/masquer la zone texte remarque selon l'état de la checkbox
+    const zoneRemarque = document.getElementById('pi-cj-remarque-zone');
+    if (zoneRemarque) zoneRemarque.style.display = cfg.convocJury.afficherRemarque ? '' : 'none';
+
     _setCheck('pi-re-sujet',  cfg.recap.afficherSujet);
     _setCheck('pi-re-langue', cfg.recap.afficherLangue);
     _setCheck('pi-re-classe', cfg.recap.afficherClasse);
 
-    // Options émargement
     _setCheck('pi-em-sujet', cfg.emargement.afficherSujet);
     _setCheck('pi-em-amem',  cfg.emargement.afficherAmem);
     _setCheck('pi-em-note',  cfg.emargement.colonneNote);
+
+    this._renderEditeurContenu(this._getConsignes());
 
     if (typeof ouvrirModal === 'function') ouvrirModal('modal-params-impression');
   },
@@ -674,12 +658,16 @@ const Print = {
   sauvegarderParamsImpression() {
     const existant = PrintConfig.get();
 
-    // Logo et signature : garder les valeurs actuelles si pas de nouveau fichier
-    // (les inputs file sont traités par les event listeners dédiés)
+    // Lire le genre depuis le select (authoritative)
+    const selectVal   = _getVal('pi-fonction');
+    const fonctionSign = selectVal.split('|')[0] || 'Principal adjoint';
+    const genreSign    = selectVal.split('|')[1] || 'M';
+
     const cfg = {
       logoBase64      : existant.logoBase64,
       signatureBase64 : existant.signatureBase64,
-      fonctionSign    : _getVal('pi-fonction') || 'Principal adjoint',
+      fonctionSign,
+      genreSign,
       nomSign         : _getVal('pi-nom'),
       dateSign        : _getVal('pi-date'),
       convocEleve : {
@@ -709,6 +697,8 @@ const Print = {
       },
     };
 
+    // Sauvegarder les consignes éditées dans la même modal
+    AppData.params.consignesJury = this._lireEditeur();
     PrintConfig.set(cfg);
     if (typeof fermerModal === 'function') fermerModal('modal-params-impression');
     if (typeof notifier === 'function') notifier('Paramètres d\'impression sauvegardés.', 'success');
@@ -719,9 +709,6 @@ const Print = {
 // Helpers locaux (fonctions utilitaires pour la modal)
 // ─────────────────────────────────────────────────────────────
 
-function _esc2(str) {
-  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
 function _setVal(id, v)     { const el=document.getElementById(id); if(el) el.value=v||''; }
 function _getVal(id)        { return (document.getElementById(id)?.value||'').trim(); }
 function _setCheck(id, v)   { const el=document.getElementById(id); if(el) el.checked=!!v; }
@@ -738,10 +725,11 @@ function _updatePreview(previewId, src, label) {
 }
 
 function _ajouterLigneExtra(container, txt, i) {
+  const esc = (typeof window.escHtml === 'function') ? window.escHtml : s => String(s||'');
   const div = document.createElement('div');
   div.className = 'pi-extra-row';
   div.innerHTML = `<span class="consigne-edit-bullet">+</span>
-    <input type="text" class="consigne-edit-item pi-extra-input" value="${_esc2(txt)}" placeholder="Consigne supplémentaire…" />
+    <input type="text" class="consigne-edit-item pi-extra-input" value="${esc(txt)}" placeholder="Consigne supplémentaire…" />
     <button class="btn btn-icon btn-del pi-extra-del" title="Supprimer">✕</button>`;
   div.querySelector('.pi-extra-del').addEventListener('click', () => div.remove());
   container.appendChild(div);
@@ -759,7 +747,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Bouton ouvrir modal params impression
   document.getElementById('btn-params-impression')?.addEventListener('click', () => Print.ouvrirParamsImpression());
+
+  // Sauvegarder — un seul listener
   document.getElementById('btn-params-impression-sauv')?.addEventListener('click', () => Print.sauvegarderParamsImpression());
+
+  // Réinitialiser consignes — un seul listener (suppression du doublon)
+  document.getElementById('btn-consignes-reset')?.addEventListener('click', () => Print.reinitialiserConsignes());
 
   // Upload logo
   document.getElementById('pi-logo-input')?.addEventListener('change', e => {
@@ -815,10 +808,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (zone) zone.style.display = e.target.checked ? '' : 'none';
   });
 
-  // Éditeur consignes
-  document.getElementById('btn-edit-consignes')?.addEventListener('click', () => Print.ouvrirEditeurConsignes());
-  document.getElementById('btn-consignes-sauvegarder')?.addEventListener('click', () => Print.sauvegarderConsignes());
-  document.getElementById('btn-consignes-reset')?.addEventListener('click', () => Print.reinitialiserConsignes());
+  // Sync radio genre ↔ select (affichage seulement)
+  document.getElementById('pi-fonction')?.addEventListener('change', e => {
+    const genre = e.target.value.split('|')[1] || 'M';
+    const radioM = document.getElementById('pi-genre-m');
+    const radioF = document.getElementById('pi-genre-f');
+    if (radioM) radioM.checked = genre !== 'F';
+    if (radioF) radioF.checked = genre === 'F';
+  });
 });
 
 window.Print = Print;

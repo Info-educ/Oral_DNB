@@ -43,10 +43,8 @@
           <span class="nav-item-label">Impressions</span>
         </button>
 
-        <!-- Séparateur -->
         <div class="nav-separator"></div>
 
-        <!-- Paramètres comme nav-item prominent -->
         <button class="nav-item nav-item-params" id="btn-open-params-nav" aria-label="Ouvrir les paramètres">
           <span class="nav-item-icon">⚙</span>
           <span class="nav-item-label">Paramètres</span>
@@ -74,10 +72,9 @@
           <input type="file" id="input-import-json" accept=".json" hidden />
         </label>
 
-        <!-- Paramètres accessible via la nav ci-dessus et depuis l'onglet Affectation -->
       </div>
 
-      <!-- Bannière non sauvegardé (visible sous la sidebar) -->
+      <!-- Bannière non sauvegardé -->
       <div class="unsaved-banner" id="unsaved-banner">
         ⚠ Modifications non sauvegardées — pensez à <strong>Sauvegarder</strong>
       </div>
@@ -241,11 +238,8 @@
             </div>
             <div class="impression-card">
               <div class="impression-icon">📌</div>
-              <div class="impression-body"><h3>Consignes jury</h3><p>Rappels réglementaires, durées, notation, conduite à tenir. <strong>Modifiables</strong> depuis l'interface.</p></div>
-              <div class="impression-card-actions">
-                <button class="btn btn-outline" id="btn-edit-consignes">✏ Modifier</button>
-                <button class="btn btn-primary" id="btn-print-consignes">🖨 Imprimer</button>
-              </div>
+              <div class="impression-body"><h3>Consignes jury</h3><p>Rappels réglementaires, durées, notation. Modifiables via <strong>🎨 Paramètres d'impression</strong>.</p></div>
+              <button class="btn btn-primary" id="btn-print-consignes">🖨 Imprimer</button>
             </div>
             <div class="impression-card impression-card-export">
               <div class="impression-icon">📊</div>
@@ -444,7 +438,6 @@
           </div>
         </fieldset>
 
-        <!-- 3 pauses indépendantes, chacune activable -->
         <fieldset class="form-fieldset">
           <legend>Pauses</legend>
           <p class="pauses-intro">Activez uniquement les pauses dont vous avez besoin. Durée 0 = pause désactivée.</p>
@@ -548,25 +541,16 @@
         <button class="modal-close" aria-label="Fermer" data-close="modal-resultat-affectation">✕</button>
       </header>
       <div class="modal-form">
-
-        <!-- Résumé succès/erreur -->
         <div id="resultat-resume"></div>
-
-        <!-- Statistiques rapides -->
         <div id="resultat-stats" class="resultat-stats-grid" style="display:none"></div>
-
-        <!-- Avertissements interactifs -->
         <div id="resultat-avertissements" style="display:none">
           <h4 class="resultat-section-titre">⚠ Points à vérifier</h4>
           <div id="resultat-avert-liste"></div>
         </div>
-
-        <!-- Répartition par jury -->
         <div id="resultat-repartition" style="display:none">
           <h4 class="resultat-section-titre">📊 Répartition par jury</h4>
           <div id="resultat-repartition-contenu"></div>
         </div>
-
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline" data-close="modal-resultat-affectation">Fermer</button>
@@ -598,7 +582,6 @@
     </div>
   </dialog>
 
-  
   <!-- MODAL Paramètres d'impression -->
   <dialog class="modal modal-wide modal-pi" id="modal-params-impression" aria-labelledby="modal-pi-title">
     <div class="modal-inner modal-pi-inner">
@@ -632,11 +615,29 @@
             <div class="pi-field-group">
               <label class="pi-label">Signataire des convocations</label>
               <label class="form-label" style="margin-top:.5rem">Fonction</label>
-              <select id="pi-fonction" class="form-input">
-                <option value="Principal">Principal</option>
-                <option value="Principal adjoint">Principal adjoint</option>
-                <option value="Proviseur">Proviseur</option>
-                <option value="Proviseur adjoint">Proviseur adjoint</option>
+              <div class="pi-genre-row">
+                <label class="pi-genre-label">
+                  <input type="radio" name="pi-genre" id="pi-genre-m" value="M" />
+                  <span>Masculin</span>
+                </label>
+                <label class="pi-genre-label">
+                  <input type="radio" name="pi-genre" id="pi-genre-f" value="F" />
+                  <span>Féminin</span>
+                </label>
+              </div>
+              <select id="pi-fonction" class="form-input" style="margin-top:.4rem">
+                <optgroup label="Masculin">
+                  <option value="Principal|M">Principal</option>
+                  <option value="Principal adjoint|M">Principal adjoint</option>
+                  <option value="Proviseur|M">Proviseur</option>
+                  <option value="Proviseur adjoint|M">Proviseur adjoint</option>
+                </optgroup>
+                <optgroup label="Féminin">
+                  <option value="Principale|F">Principale</option>
+                  <option value="Principale adjointe|F">Principale adjointe</option>
+                  <option value="Proviseure|F">Proviseure</option>
+                  <option value="Proviseure adjointe|F">Proviseure adjointe</option>
+                </optgroup>
               </select>
               <label class="form-label" style="margin-top:.5rem">Nom et prénom</label>
               <input type="text" id="pi-nom" class="form-input" placeholder="Ex : Marie DUPONT" />
@@ -715,6 +716,16 @@
           <label class="checkbox-label"><input type="checkbox" id="pi-em-note" />Colonne « Note jury »</label>
         </div>
 
+        <!-- ── CONSIGNES JURY (éditeur intégré) ─────────────── -->
+        <div class="pi-section">
+          <h4 class="pi-section-titre">📌 Contenu des consignes jury</h4>
+          <p class="consignes-editor-info">Modifiez les blocs ci-dessous. Ces consignes apparaîtront sur la fiche imprimée.</p>
+          <div id="consignes-editor-content" class="consignes-editor-content"></div>
+          <div class="pi-consignes-footer">
+            <button type="button" class="btn btn-outline btn-sm" id="btn-consignes-reset">↺ Réinitialiser les consignes</button>
+          </div>
+        </div>
+
       </div><!-- fin pi-form -->
 
       <div class="modal-footer">
@@ -724,90 +735,12 @@
     </div>
   </dialog>
 
-  <!-- MODAL Consignes jury (éditeur) -->
-  <dialog class="modal modal-wide modal-consignes" id="modal-consignes" aria-labelledby="modal-consignes-title">
-    <div class="modal-inner modal-consignes-inner">
-      <header class="modal-header">
-        <h3 id="modal-consignes-title">✏ Modifier les consignes jury</h3>
-        <button class="modal-close" aria-label="Fermer" data-close="modal-consignes">✕</button>
-      </header>
+  <div class="modal-backdrop" id="modal-backdrop" hidden aria-hidden="true"></div>
 
-      <div class="modal-form consignes-editor-wrap">
-        <p class="consignes-editor-info">
-          Modifiez les blocs ci-dessous. Ces consignes seront imprimées sur la fiche jury et sauvegardées dans votre session JSON.
-        </p>
-        <div id="consignes-editor-content" class="consignes-editor-content">
-          <!-- Généré dynamiquement par Print.ouvrirEditeurConsignes() -->
-        </div>
-      </div>
-
-      <div class="modal-footer consignes-editor-footer">
-        <button type="button" class="btn btn-outline" id="btn-consignes-reset" title="Revenir aux consignes par défaut">
-          ↺ Réinitialiser
-        </button>
-        <div style="flex:1"></div>
-        <button type="button" class="btn btn-outline" data-close="modal-consignes">Annuler</button>
-        <button type="button" class="btn btn-primary" id="btn-consignes-sauvegarder">💾 Sauvegarder</button>
-      </div>
-    </div>
-  </dialog>
-
-<div class="modal-backdrop" id="modal-backdrop" hidden aria-hidden="true"></div>
-
-  <script src="js/data.js?v=13"></script>
-  <script src="js/ui.js?v=13"></script>
-  <script src="js/affectation.js?v=13"></script>
-  <script src="js/print.js?v=13"></script>
-
-  <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    // Activer/désactiver les champs de pause selon la checkbox
-    [1,2,3].forEach(n => {
-      const cb     = document.getElementById(`param-pause${n}-active`);
-      const fields = document.getElementById(`pause${n}-fields`);
-      const bloc   = cb ? cb.closest('.pause-bloc') : null;
-      if (!cb || !fields) return;
-      const toggle = () => {
-        fields.classList.toggle('disabled', !cb.checked);
-        if (bloc) bloc.classList.toggle('active', cb.checked);
-        fields.querySelectorAll('input').forEach(i => i.disabled = !cb.checked);
-      };
-      toggle();
-      cb.addEventListener('change', toggle);
-    });
-
-    // Mise à jour récap calculateur
-    function majRecap() {
-      const p = AppData.params;
-      const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-      const setHTML = (id, v) => { const el=document.getElementById(id); if(el) el.innerHTML=v; };
-
-      // ── Bandeau paramètres (onglet Affectation) ──
-      set('pb-debut',  p.heureDebut);
-      set('pb-fin',    p.heureFin);
-      set('pb-solo',   p.dureeSolo);
-      set('pb-binome', p.dureeBinome);
-      set('pb-marge',  p.margePassage || 0);
-      set('pb-convoc', p.convocAvant);
-
-      const pausesActives = (p.pauses || []).filter(pa => pa.active && pa.duree > 0);
-      setHTML('pb-pauses', pausesActives.length
-        ? pausesActives.map(pa => `<strong>${pa.heure}</strong>&nbsp;(${pa.duree}&nbsp;min)`).join(' · ')
-        : '<em style="color:var(--gray-400)">Aucune</em>');
-    }
-    majRecap();
-    document.getElementById('form-params')?.addEventListener('submit', () => setTimeout(majRecap, 100));
-
-
-    // Éditeur de consignes jury
-    document.getElementById('btn-edit-consignes')?.addEventListener('click', () => Print.ouvrirEditeurConsignes());
-    document.getElementById('btn-consignes-sauvegarder')?.addEventListener('click', () => Print.sauvegarderConsignes());
-    document.getElementById('btn-consignes-reset')?.addEventListener('click', () => Print.reinitialiserConsignes());
-    // Alias export Excel depuis impressions
-    const alias = document.getElementById('btn-export-xlsx-impressions');
-    if (alias) alias.addEventListener('click', () => document.getElementById('btn-export-xlsx').click());
-  });
-  </script>
+  <script src="js/data.js?v=6"></script>
+  <script src="js/ui.js?v=6"></script>
+  <script src="js/affectation.js?v=6"></script>
+  <script src="js/print.js?v=6"></script>
 
 </body>
 </html>

@@ -1,26 +1,18 @@
 /**
  * affectation.js — Moteur d'affectation automatique
- * Oral DNB · Collège Joliot Curie  —  Rev.4
+ * Oral DNB · Collège Joliot Curie  —  Rev.6
  *
- * Nouveautés Rev.4 :
- *   — Pauses ADAPTATIVES par jury :
- *       l'heure indiquée est "indicative" ; la pause s'insère juste après
- *       le candidat qui se termine le plus près de l'horaire cible,
- *       afin de ne jamais couper un passage en cours.
- *   — Affectation des non-affectés :
- *       bouton "Affecter les non-affectés" visible après affectation ;
- *       place les élèves restants même si la session dépasse l'heure de fin.
- *   — Déplacement par Drag & Drop :
- *       les lignes de la table affectation sont draggables ;
- *       on peut déposer un créneau sur la carte d'un autre jury.
+ * Corrections Rev.6 :
+ *   — escHtml supprimée (définie dans ui.js, exposée en window.escHtml)
+ *   — DnD.reset() remplacé par UI.reset() côté ui.js ; ici pas de DnD
  *
  * Contraintes maintenues :
- *   1. Langue avec priorité : élève Anglais → jury Anglais en priorité
+ *   1. Langue stricte : élève Anglais → jury Anglais uniquement
  *   2. Binômes : même jury + même créneau + dureeBinome
  *   3. Tiers-temps : durée × 4/3 arrondie au multiple de 5 min
  *   4. Prioritaires : premiers créneaux de leur jury
- *   5. Pauses : ADAPTATIVES (voir ci-dessus)
- *   6. Capacité : calculée automatiquement si jury.capacite === 0
+ *   5. Pauses ADAPTATIVES (s'insèrent après le candidat le plus proche)
+ *   6. Capacité calculée automatiquement si jury.capacite === 0
  */
 
 'use strict';
@@ -31,12 +23,6 @@ const Affectation = {
   // POINT D'ENTRÉE
   // ──────────────────────────────────────────────────────────────
 
-  /**
-   * Lance l'affectation complète.
-   * @param {Map} confirmations - Map<eleveId, partenaireId|null> pour les binômes flous
-   * @param {boolean} nonAffectesUniquement - si true, n'affecte que les élèves non encore affectés
-   * @returns {{ ok, message, avertissements, confirmationsRequises }}
-   */
   lancer(confirmations = new Map(), nonAffectesUniquement = false) {
     const avert = [];
 
@@ -45,7 +31,6 @@ const Affectation = {
 
     this._calculerCapaciteAuto(avert);
 
-    // Si on n'affecte que les non-affectés, on filtre les élèves déjà en créneau
     let elevesATraiter = AppData.eleves;
     if (nonAffectesUniquement) {
       const dejaDansCreneaux = new Set(AppData.affectation.flatMap(c => c.eleveIds));
@@ -66,11 +51,9 @@ const Affectation = {
     const { plannings, avertAffect } = this._affecter(groupesTries, nonAffectesUniquement);
     avert.push(...avertAffect);
 
-    // Recalcul des horaires : si mode non-affectés, on repart des créneaux existants par jury
     const creneaux = this._calculerHoraires(plannings, nonAffectesUniquement);
 
     if (nonAffectesUniquement) {
-      // Fusionner les nouveaux créneaux avec les existants
       AppData.affectation = [...AppData.affectation, ...creneaux];
       this._recalculerTous();
     } else {
@@ -225,16 +208,9 @@ const Affectation = {
   },
 
   // ──────────────────────────────────────────────────────────────
-  // PHASE 2 — TRI avec mélange intra-strate
-  //
-  // Contraintes absolues maintenues :
-  //   1. Prioritaires TOUJOURS en premier
-  //   2. Aménagements (tiers-temps) juste après les prioritaires
-  //   3. Dans chaque strate : mélange aléatoire (Fisher-Yates)
-  //      → les classes sont entremêlées, pas de bloc 3A puis 3B puis 3D
+  // PHASE 2 — TRI avec mélange intra-strate (Fisher-Yates)
   // ──────────────────────────────────────────────────────────────
 
-  /** Mélange un tableau en place (Fisher-Yates). */
   _shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -244,11 +220,6 @@ const Affectation = {
   },
 
   _trierGroupes(groupes) {
-    // Strate 1 : prioritaires avec amenagement
-    // Strate 2 : prioritaires sans amenagement
-    // Strate 3 : non-prioritaires avec amenagement
-    // Strate 4 : non-prioritaires sans amenagement
-    // Chaque strate est melangee aleatoirement.
     const strates = [[], [], [], []];
     groupes.forEach(g => {
       const isPrio = !!g.prioritaire;
@@ -283,7 +254,6 @@ const Affectation = {
     const sansLangue = groupesTries.filter(g => g.langue === '');
 
     const placerGroupe = (groupe, jurysCandidats, avertir) => {
-      // En mode non-affectés, la capacité est ignorée (sansCap=true)
       const disponibles = jurysCandidats.filter(j => {
         const plan = plannings.get(j.id);
         if (sansCap) return true;
@@ -310,7 +280,7 @@ const Affectation = {
       placerGroupe(groupe, jCompatibles, true);
     });
 
-    // Passe 2 : élèves sans langue
+    // Passe 2 : élèves sans langue → jurys sans langue, puis avec langue
     sansLangue.forEach(groupe => {
       const jSansLangue = AppData.jurys.filter(j => this._prioriteLangue(j.langue, '') === 'exact');
       if (placerGroupe(groupe, jSansLangue, false)) return;
@@ -324,41 +294,19 @@ const Affectation = {
   },
 
   // ──────────────────────────────────────────────────────────────
-  // PHASE 4 — HORAIRES (avec pauses ADAPTATIVES)
+  // PHASE 4 — HORAIRES avec pauses ADAPTATIVES
   // ──────────────────────────────────────────────────────────────
 
-  /**
-   * Retourne les pauses actives triées, chacune avec son heure cible en minutes.
-   * Contrairement à avant, la pause n'a PAS de fin fixe — elle s'insère
-   * dynamiquement après le candidat qui finit le plus près de l'heure cible.
-   */
   _pausesActives() {
     return (AppData.params.pauses || [])
       .filter(p => p.active && p.duree > 0)
       .map(p => ({
-        cible : AppData.enMinutes(p.heure),   // heure indicative en minutes
+        cible : AppData.enMinutes(p.heure),
         duree : parseInt(p.duree, 10),
       }))
       .sort((a,b) => a.cible - b.cible);
   },
 
-  /**
-   * Calcule les créneaux horaires d'un planning de jury
-   * avec insertion ADAPTATIVE des pauses.
-   *
-   * Algorithme :
-   *   Pour chaque groupe à placer :
-   *     1. Vérifier si une pause non encore insérée a son heure cible ≤ curseur actuel
-   *        (le candidat précédent a dépassé ou atteint l'heure de la pause)
-   *        → insérer la pause MAINTENANT (après le candidat courant)
-   *     2. Sinon, vérifier si commencer ce groupe ferait dépasser l'heure cible
-   *        de la prochaine pause AVANT la fin du groupe
-   *        → ça signifie que le candidat PRÉCÉDENT était le plus proche
-   *        → insérer la pause avant ce groupe
-   *
-   * @param {Map} plannings
-   * @param {boolean} nonAffectesUniquement - si true, on ne traite que les nouveaux groupes
-   */
   _calculerHoraires(plannings, nonAffectesUniquement = false) {
     const creneaux = [];
     const pauses   = this._pausesActives();
@@ -370,7 +318,6 @@ const Affectation = {
 
       let curseur = AppData.enMinutes(jury.heureDebut || AppData.params.heureDebut);
 
-      // Si mode non-affectés, on repart de la fin du dernier créneau existant pour ce jury
       if (nonAffectesUniquement) {
         const existants = AppData.affectation.filter(c => c.juryId === jury.id);
         if (existants.length > 0) {
@@ -386,12 +333,9 @@ const Affectation = {
         ? (AppData.affectation.filter(c => c.juryId === jury.id).length + 1)
         : 1;
 
-      // Pauses non encore insérées pour CE jury
-      // (chaque jury gère ses pauses indépendamment)
       const pausesRestantes = pauses.map((p, i) => ({ ...p, idx: i, insere: false }));
 
       groupes.forEach((groupe, gIdx) => {
-        // Calcul de la durée de ce créneau
         let duree;
         if (groupe.isBinome) {
           const am = groupe.eleveIds.some(id => AppData.getEleve(id)?.amenagement);
@@ -401,28 +345,13 @@ const Affectation = {
           duree = AppData.calculerDuree(e, false);
         }
 
-        // ── Gestion ADAPTATIVE des pauses ──────────────────────────
-        // Vérifier pour chaque pause non insérée si elle doit s'insérer AVANT ce groupe
         for (const pause of pausesRestantes) {
           if (pause.insere) continue;
-
-          // Cas 1 : le curseur a déjà dépassé l'heure cible de la pause
-          // (le candidat précédent finissait après l'heure cible → on insère maintenant)
           if (gIdx > 0 && curseur >= pause.cible) {
-            curseur += pause.duree;
-            pause.insere = true;
-            continue;
+            curseur += pause.duree; pause.insere = true; continue;
           }
-
-          // Cas 2 : ce groupe DÉPASSERAIT l'heure cible en cours de route
-          // → la pause s'insère AVANT ce groupe (on attendait le fin du précédent)
-          // Vérifier si le curseur est avant la cible et que ce groupe passerait par-dessus
           if (curseur < pause.cible && (curseur + duree) > pause.cible) {
-            // Le candidat courant dépasserait l'heure de pause :
-            // la pause s'insère AVANT ce groupe (le candidat précédent était le plus proche)
-            curseur += pause.duree;
-            pause.insere = true;
-            continue;
+            curseur += pause.duree; pause.insere = true; continue;
           }
         }
 
@@ -474,13 +403,6 @@ const Affectation = {
     return null;
   },
 
-  /**
-   * Déplace un créneau par son ID vers un autre jury et une nouvelle position.
-   * Utilisé par le drag & drop.
-   * @param {number} creneauIdx - index dans AppData.affectation
-   * @param {number} juryIdCible - id du jury de destination
-   * @param {number|null} avantCreneauIdx - insérer avant ce créneau (null = en fin)
-   */
   deplacerCreneauDnD(creneauIdx, juryIdCible, avantCreneauIdx = null) {
     const creneau = AppData.affectation[creneauIdx];
     if (!creneau) return 'Créneau introuvable.';
@@ -495,19 +417,13 @@ const Affectation = {
       }
     }
 
-    // Retirer le créneau de sa position actuelle
     AppData.affectation.splice(creneauIdx, 1);
-
-    // Mettre à jour le juryId
     creneau.juryId = juryIdCible;
 
-    // Déterminer la position d'insertion
     if (avantCreneauIdx !== null) {
-      // L'index a pu changer si le créneau était avant la cible
       const realIdx = avantCreneauIdx > creneauIdx ? avantCreneauIdx - 1 : avantCreneauIdx;
       AppData.affectation.splice(realIdx, 0, creneau);
     } else {
-      // Insérer en fin de la liste du jury cible
       const dernier = [...AppData.affectation].reverse().findIndex(c => c.juryId === juryIdCible);
       if (dernier >= 0) {
         AppData.affectation.splice(AppData.affectation.length - dernier, 0, creneau);
@@ -537,7 +453,6 @@ const Affectation = {
       const pausesRestantes = pauses.map(p => ({ ...p, insere: false }));
 
       creneaux.forEach((c, i) => {
-        // Pauses adaptatives
         for (const pause of pausesRestantes) {
           if (pause.insere) continue;
           if (i > 0 && curseur >= pause.cible) { curseur += pause.duree; pause.insere = true; continue; }
@@ -591,12 +506,14 @@ function _afficherModalResultat(res) {
   const nbJurys  = new Set(AppData.affectation.map(c => c.juryId)).size;
   const nbCren   = AppData.affectation.length;
 
+  const esc = window.escHtml || (s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'));
+
   const resumeEl = document.getElementById('resultat-resume');
   resumeEl.innerHTML = `
     <div class="resultat-resume resultat-resume-ok">
       <span class="resultat-resume-icon">✓</span>
       <div>
-        <div class="resultat-resume-titre">${escHtml(res.message)}</div>
+        <div class="resultat-resume-titre">${esc(res.message)}</div>
         <div class="resultat-resume-sous">Affectation effectuée — résultat modifiable dans l'onglet</div>
       </div>
     </div>`;
@@ -623,7 +540,7 @@ function _afficherModalResultat(res) {
       const isNonAff = a.includes('non affecté') || a.includes('Aucun jury');
       const isBinome = a.includes('inôme') || a.includes('approximatif');
       const icon = isNonAff ? '🔴' : isBinome ? '🟡' : '⚠';
-      return `<div class="resultat-avert-item"><span class="resultat-avert-icon">${icon}</span><span class="resultat-avert-text">${escHtml(a)}</span></div>`;
+      return `<div class="resultat-avert-item"><span class="resultat-avert-icon">${icon}</span><span class="resultat-avert-text">${esc(a)}</span></div>`;
     }).join('');
   } else { avertEl.style.display = 'none'; }
 
@@ -644,8 +561,8 @@ function _afficherModalResultat(res) {
         const cls = pct > 100 ? 'repartition-item-over' : pct > 90 ? 'repartition-item-high' : '';
         const langues = [...p.langues].join(', ') || 'sans langue';
         return `<div class="repartition-item ${cls}">
-          <div class="repartition-jury-nom">${escHtml(p.jury.nom)}</div>
-          <div class="repartition-jury-meta">Salle ${escHtml(p.jury.salle)} · ${escHtml(langues)}</div>
+          <div class="repartition-jury-nom">${esc(p.jury.nom)}</div>
+          <div class="repartition-jury-meta">Salle ${esc(p.jury.salle)} · ${esc(langues)}</div>
           <div class="repartition-barre-wrap"><div class="repartition-barre" style="width:${Math.min(pct,100)}%"></div></div>
           <div class="repartition-chiffres"><strong>${p.nb}</strong> / ${p.jury.capacite} élève${p.nb>1?'s':''}<span class="repartition-pct">${pct}%</span></div>
         </div>`;
@@ -669,6 +586,8 @@ function _afficherModalBinomesFlous(confirmations) {
   const liste = document.getElementById('binomes-flous-liste');
   if (!liste) return;
 
+  const esc = window.escHtml || (s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'));
+
   liste.innerHTML = confirmations.map((c, i) => `
     <div class="binome-flou-card" id="bfc-${i}" data-idx="${i}"
          data-eleve-id="${c.eleveId}" data-suggere-id="${c.suggeréId}">
@@ -676,11 +595,11 @@ function _afficherModalBinomesFlous(confirmations) {
       <div class="bfc-body">
         <div class="bfc-eleve">
           <span class="bfc-label">Élève</span>
-          <strong>${escHtml(c.eleveNom)}</strong> a saisi comme binôme : <em>"${escHtml(c.binomeSaisi)}"</em>
+          <strong>${esc(c.eleveNom)}</strong> a saisi comme binôme : <em>"${esc(c.binomeSaisi)}"</em>
         </div>
         <div class="bfc-suggestion">
           <span class="bfc-label">Correspondance trouvée</span>
-          <strong>${escHtml(c.suggeréNom)}</strong>
+          <strong>${esc(c.suggeréNom)}</strong>
         </div>
       </div>
       <div class="bfc-actions">
@@ -739,16 +658,10 @@ function _afficherModalBinomesFlous(confirmations) {
   if (typeof ouvrirModal === 'function') ouvrirModal('modal-binomes-flous');
 }
 
-// Helper escHtml local
-function escHtml(str) {
-  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('btn-lancer-affectation');
   if (btn) btn.addEventListener('click', () => _lancerAvecConfirmations(false));
 
-  // Bouton "Affecter les non-affectés" (ajouté dynamiquement par ui.js)
   document.addEventListener('click', e => {
     if (e.target.closest('#btn-affecter-non-affectes')) {
       _lancerAvecConfirmations(true);
