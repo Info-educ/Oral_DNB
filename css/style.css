@@ -1478,195 +1478,163 @@ dialog.modal::backdrop { display: none; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   PAGE SOMMAIRE — première page de chaque document imprimé
+   BANDEAU DE GARDE — inséré en haut de la première page de chaque document
+   Pas de .print-page → aucun saut de page généré
 ═══════════════════════════════════════════════════════════════ */
 
 @media print {
 
-  /* ── Date de convocation (nouvelle colonne) ─────────────────── */
-  .convoc-date-cell {
-    font-size: 10pt;
-    font-weight: bold;
-    color: #163566;
-    text-transform: capitalize;
-    padding: 6pt 8pt;
-    border: 1px solid #ccc;
-    text-align: center;
-    min-width: 90pt;
+  .garde-bandeau {
+    border: 1.5pt solid #163566;
+    border-radius: 4pt;
+    margin-bottom: .5cm;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
-  /* ── Page sommaire ──────────────────────────────────────────── */
-  .sommaire-page {
+  .garde-row-top {
     display: flex;
-    flex-direction: column;
-    min-height: calc(297mm - 2cm);
-    padding: 1.2cm 1.8cm;
-    font-family: 'Georgia', serif;
-    gap: .6cm;
-  }
-
-  .som-header {
-    display: flex;
-    align-items: center;
-    gap: .5cm;
-    border-bottom: 2pt solid #163566;
-    padding-bottom: .4cm;
-  }
-  .sommaire-logo {
-    max-height: 55pt;
-    max-width: 110pt;
-    object-fit: contain;
-  }
-  .som-header-titre {}
-  .som-etab {
-    font-size: 13pt;
-    font-weight: bold;
-    color: #163566;
-  }
-  .som-annee {
-    font-size: 9pt;
-    color: #555;
-    margin-top: 2pt;
-  }
-
-  .som-titre-doc {
-    text-align: center;
-    margin: .3cm 0;
-  }
-  .som-type-epreuve {
-    font-size: 11pt;
-    color: #555;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-  }
-  .som-oral {
-    font-size: 16pt;
-    font-weight: bold;
-    color: #163566;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-    margin: 4pt 0;
-  }
-  .som-date-epreuve {
-    font-size: 14pt;
-    font-weight: bold;
-    color: #dc2626 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-    margin-top: 4pt;
-    border: 1.5pt solid #dc2626 !important;
-    display: inline-block;
-    padding: 4pt 16pt;
-    border-radius: 3pt;
-  }
-
-  .som-doc-label {
-    text-align: center;
-  }
-  .som-doc-type {
-    display: inline-block;
+    align-items: stretch;
     background: #163566 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    color: white !important;
-    font-size: 13pt;
-    font-weight: bold;
-    letter-spacing: .04em;
-    padding: 5pt 20pt;
-    border-radius: 3pt;
+    padding: .25cm .4cm;
+    gap: .4cm;
   }
 
-  .som-stats-grid {
+  .garde-left {
     display: flex;
+    align-items: center;
+    gap: .3cm;
+    flex: 1.2;
+  }
+  .garde-logo {
+    max-height: 32pt;
+    max-width: 70pt;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+  }
+  .garde-etab {
+    font-size: 9pt;
+    font-weight: bold;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .garde-annee {
+    font-size: 7.5pt;
+    color: rgba(255,255,255,.75) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .garde-center {
+    flex: 2;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .garde-type-epreuve {
+    font-size: 8pt;
+    color: rgba(255,255,255,.8) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .garde-date {
+    font-size: 11pt;
+    font-weight: 900;
+    color: #fde68a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin-top: 1pt;
+  }
+
+  .garde-right {
+    flex: 1.2;
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .garde-doc-type {
+    font-size: 9pt;
+    font-weight: bold;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .garde-edition {
+    font-size: 7pt;
+    color: rgba(255,255,255,.6) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin-top: 2pt;
+  }
+
+  /* Bande de stats */
+  .garde-row-stats {
+    display: flex;
+    align-items: center;
     flex-wrap: wrap;
     gap: .3cm;
-    justify-content: center;
-    margin: .2cm 0;
-  }
-  .som-stat-card {
-    border: 1pt solid #d1d5db;
-    border-radius: 4pt;
-    padding: 8pt 16pt;
-    text-align: center;
-    min-width: 70pt;
-  }
-  .som-stat-primary {
-    border-color: #163566 !important;
+    padding: .18cm .4cm;
     background: #f0f4ff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    border-top: 1pt solid #c7d2fe;
   }
-  .som-stat-warn {
-    border-color: #dc2626 !important;
-    background: #fff5f5 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+
+  .garde-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 36pt;
+    padding: 0 .2cm;
+    border-right: .5pt solid #c7d2fe;
   }
-  .som-stat-val {
-    font-size: 22pt;
-    font-weight: bold;
+  .garde-stat:last-of-type { border-right: none; }
+  .garde-stat-val {
+    font-size: 13pt;
+    font-weight: 900;
     color: #163566;
     line-height: 1;
   }
-  .som-stat-warn .som-stat-val { color: #dc2626; }
-  .som-stat-label {
-    font-size: 8pt;
-    color: #555;
-    margin-top: 2pt;
+  .garde-stat-lbl {
+    font-size: 6.5pt;
     text-transform: uppercase;
     letter-spacing: .04em;
+    color: #64748b;
+    margin-top: 1pt;
   }
+  .garde-stat-warn .garde-stat-val { color: #dc2626; }
 
-  .som-classes-section {
+  /* Répartition par classe — inline, à la suite des stats */
+  .garde-classes {
     flex: 1;
     display: flex;
-    flex-direction: column;
-    gap: .2cm;
+    flex-wrap: wrap;
+    gap: .15cm .3cm;
+    align-items: center;
+    padding-left: .3cm;
+    border-left: .5pt solid #c7d2fe;
   }
-  .som-classes-titre {
-    font-size: 10pt;
-    font-weight: bold;
-    color: #163566;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-    border-bottom: 1pt solid #e2e8f0;
-    padding-bottom: 3pt;
-    margin: 0;
-  }
-  .som-classes-table {
-    border-collapse: collapse;
-    width: 220pt;
-    font-size: 10pt;
-  }
-  .som-classes-table th {
-    background: #163566 !important;
+  .garde-classe-item {
+    font-size: 8pt;
+    color: #1e3a5f;
+    background: white !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    color: white !important;
-    padding: 4pt 10pt;
-    text-align: left;
+    border: .5pt solid #93c5fd;
+    border-radius: 3pt;
+    padding: 1pt 5pt;
+    white-space: nowrap;
   }
-  .som-classes-table td {
-    padding: 4pt 10pt;
-    border-bottom: .5pt solid #e2e8f0;
-  }
-  .som-td-classe { font-weight: 600; color: #163566; }
-  .som-td-nb     { text-align: center; font-weight: bold; }
-  .som-total-row td {
-    border-top: 1.5pt solid #163566 !important;
-    background: #f8fafc !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  .som-footer {
-    border-top: .5pt solid #e2e8f0;
-    padding-top: .3cm;
-    font-size: 7.5pt;
-    color: #888;
-    text-align: center;
-  }
-  .som-footer p { margin: 1pt 0; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1675,13 +1643,9 @@ dialog.modal::backdrop { display: none; }
 
 @media print {
 
-  /* FIX page blanche : la sommaire-page n'est jamais la dernière page
-     → elle a déjà page-break-after:always via .print-page → correct.
-     Le vrai problème est Chrome qui ajoute une page vide APRES le dernier
-     .print-page si celui-ci a page-break-after:always.
-     On force avoid sur le dernier enfant de #print-zone. */
-  #print-zone > .print-page:last-child,
-  #print-zone > div:last-child .print-page:last-child {
+  /* Plus de page blanche : le bandeau de garde est inline dans la première page,
+     pas une .print-page séparée. La règle ci-dessous reste en sécurité. */
+  #print-zone > .print-page:last-child {
     page-break-after: avoid !important;
     break-after: avoid !important;
   }
@@ -1755,9 +1719,11 @@ dialog.modal::backdrop { display: none; }
      LISTING ALPHABÉTIQUE (A3)
   ═══════════════════════════════ */
 
-  .listing-page {
-    padding: 0;   /* les marges sont dans @page */
-    font-family: 'Arial', sans-serif;
+  /* Listing continu : pas de .print-page, donc pas de page-break-after automatique.
+     La pagination est gérée naturellement par l'imprimante via @page listing-a3. */
+  .listing-page-continue {
+    font-family: Arial, sans-serif;
+    /* Pas de page-break-after — le contenu coule sur autant de feuilles que nécessaire */
   }
 
   .listing-header {
@@ -1808,15 +1774,24 @@ dialog.modal::backdrop { display: none; }
     print-color-adjust: exact;
   }
 
-  .listing-page-info { font-size: 8pt; color: #555; font-weight: bold; }
-  .listing-range     { font-size: 7.5pt; color: #888; }
-  .listing-total     { font-size: 9pt; font-weight: bold; color: #163566; }
+  .listing-page-info   { font-size: 8pt; color: #555; font-weight: bold; }
+  .listing-range       { font-size: 7.5pt; color: #888; }
+  .listing-total       { font-size: 9pt; font-weight: bold; color: #163566; }
+  .listing-total-label { font-size: 10pt; font-weight: bold; color: #163566; text-align: right; }
 
-  /* Tableau listing */
+  /* Tableau listing continu */
   .listing-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13pt;
+  }
+  /* Répéter l'en-tête sur chaque page imprimée */
+  .listing-table thead {
+    display: table-header-group;
+  }
+  .listing-table tbody tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
   .listing-table thead tr {
     background: #163566 !important;
@@ -1957,14 +1932,14 @@ dialog.modal::backdrop { display: none; }
     text-align: right;
   }
 
-  /* Corps principal : SALLE + JURY */
+  /* Corps principal : SALLE + JURY — occupe tout l'espace disponible */
   .affiche-corps {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 1.5cm;
-    padding: .3cm .5cm;
+    gap: 2cm;
+    padding: .5cm .8cm;
   }
 
   .affiche-salle-bloc,
@@ -1978,27 +1953,27 @@ dialog.modal::backdrop { display: none; }
 
   .affiche-salle-label,
   .affiche-jury-label {
-    font-size: 14pt;
+    font-size: 18pt;
     font-weight: 700;
-    letter-spacing: .18em;
+    letter-spacing: .22em;
     text-transform: uppercase;
     color: #555;
   }
 
   .affiche-salle-num {
-    font-size: 100pt;
+    font-size: 140pt;
     font-weight: 900;
-    line-height: 1;
+    line-height: .95;
     color: #dc2626 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    letter-spacing: -.02em;
+    letter-spacing: -.03em;
   }
 
   .affiche-jury-num {
-    font-size: 80pt;
+    font-size: 130pt;
     font-weight: 900;
-    line-height: 1;
+    line-height: .95;
     color: #163566 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
@@ -2033,35 +2008,6 @@ dialog.modal::backdrop { display: none; }
     padding-left: 1.5cm;
   }
 
-  /* Bandeau infos bas */
-  .affiche-infos {
-    display: flex;
-    gap: .4cm;
-    padding: .3cm .5cm;
-    background: #f8fafc !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-    border-top: 1.5pt solid #e2e8f0;
-  }
-  .affiche-info-item {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-  .affiche-info-label {
-    font-size: 7pt;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    color: #888;
-    font-weight: 600;
-  }
-  .affiche-info-val {
-    font-size: 10pt;
-    font-weight: bold;
-    color: #163566;
-    margin-top: 2pt;
-  }
+  /* Bandeau infos bas supprimé à la demande */
 }
 

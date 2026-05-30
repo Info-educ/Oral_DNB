@@ -186,41 +186,41 @@ const Print = {
 
 
   // ─────────────────────────────────────────────────────────────────────────
-  // PAGE SOMMAIRE — insérée en première page de chaque impression
+  // BANDEAU DE GARDE — inséré en haut de la première page (pas de page séparée)
+  // Affiche les stats clés, la date et la répartition par classe
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Génère une page de garde/sommaire commune à tous les documents imprimés.
-   * @param {string} typeDoc  — ex. "Convocations élèves"
-   * @param {number} nbPages  — nombre de pages du document (hors sommaire)
-   * @param {number} nbEleves — nombre d'élèves concernés par ce document
+   * Retourne un bloc HTML de garde à insérer en tête du premier print-page.
+   * N'est PAS une .print-page → aucun saut de page généré.
+   * @param {string} typeDoc   — ex. "Convocations élèves"
+   * @param {number} nbPages   — nombre de pages du document
+   * @param {number} nbEleves  — nombre de candidats concernés
    */
-  _pageSommaire(typeDoc, nbPages, nbEleves) {
+  _bandeauGarde(typeDoc, nbPages, nbEleves) {
     const p   = AppData.params;
     const cfg = PrintConfig.get();
 
-    // Date de l'épreuve formatée
-    let dateEpreuveStr = '—';
+    // Date de l'épreuve
+    let dateStr = '—';
     if (p.dateEpreuve) {
       try {
         const d = new Date(p.dateEpreuve + 'T12:00:00');
-        dateEpreuveStr = d.toLocaleDateString('fr-FR', {
-          weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+        dateStr = d.toLocaleDateString('fr-FR', {
+          weekday:'long', day:'2-digit', month:'long', year:'numeric'
         });
-        dateEpreuveStr = dateEpreuveStr.charAt(0).toUpperCase() + dateEpreuveStr.slice(1);
-      } catch { dateEpreuveStr = p.dateEpreuve; }
+        dateStr = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+      } catch { dateStr = p.dateEpreuve; }
     }
 
-    const typeLabel = (p.typeEpreuve === 'DNB_BLANC')
-      ? 'Diplôme National du Brevet — Blanc'
-      : 'Diplôme National du Brevet';
+    const typeLabel = p.typeEpreuve === 'DNB_BLANC'
+      ? 'DNB — Blanc' : 'Diplôme National du Brevet';
 
     const logoHtml = cfg.logoBase64
-      ? `<img src="${cfg.logoBase64}" class="print-logo sommaire-logo" alt="Logo établissement" />`
+      ? `<img src="${cfg.logoBase64}" class="garde-logo" alt="Logo" />`
       : '';
 
-    // ── Répartition par classe ──────────────────────────────────────────────
-    // On construit un Map classe → nb élèves affectés dans ce document
+    // Répartition par classe (élèves affectés uniquement)
     const elevesConcernes = new Set();
     AppData.affectation.forEach(c => c.eleveIds.forEach(id => elevesConcernes.add(id)));
 
@@ -232,93 +232,47 @@ const Print = {
         parClasse.set(cl, (parClasse.get(cl) || 0) + 1);
       });
 
-    // Trier les classes alphabétiquement
     const classesTriees = [...parClasse.entries()].sort((a, b) => a[0].localeCompare(b[0], 'fr'));
+    const colonnesClasses = classesTriees.map(([cl, nb]) =>
+      `<span class="garde-classe-item"><strong>${this._esc(cl)}</strong>&nbsp;: ${nb}</span>`
+    ).join('');
 
-    const lignesClasses = classesTriees.map(([cl, nb]) => `
-      <tr>
-        <td class="som-td-classe">${this._esc(cl)}</td>
-        <td class="som-td-nb">${nb}</td>
-      </tr>`).join('');
-
-    // Élèves non affectés
     const nbNonAff = AppData.nbEleves() - elevesConcernes.size;
-
-    // Stats globales
-    const nbJurysUtilises = new Set(AppData.affectation.map(c => c.juryId)).size;
-    const nbCreneaux      = AppData.affectation.length;
+    const nbJurys  = new Set(AppData.affectation.map(c => c.juryId)).size;
+    const nbCren   = AppData.affectation.length;
 
     const now = new Date().toLocaleDateString('fr-FR', {
-      day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      day:'2-digit', month:'2-digit', year:'numeric',
+      hour:'2-digit', minute:'2-digit'
     });
 
-    return `
-      <div class="print-page sommaire-page">
-
-        <div class="som-header">
+    return `<div class="garde-bandeau">
+      <div class="garde-row-top">
+        <div class="garde-left">
           ${logoHtml}
-          <div class="som-header-titre">
-            <div class="som-etab">${this._esc(p.etablissement)}</div>
-            <div class="som-annee">Année scolaire ${this._esc(p.annee)}</div>
+          <div>
+            <div class="garde-etab">${this._esc(p.etablissement)}</div>
+            <div class="garde-annee">Année scolaire ${this._esc(p.annee)}</div>
           </div>
         </div>
-
-        <div class="som-titre-doc">
-          <div class="som-type-epreuve">${this._esc(typeLabel)}</div>
-          <div class="som-oral">ÉPREUVE ORALE</div>
-          ${p.dateEpreuve ? `<div class="som-date-epreuve">${this._esc(dateEpreuveStr)}</div>` : ''}
+        <div class="garde-center">
+          <div class="garde-type-epreuve">${this._esc(typeLabel)} — Oral</div>
+          ${p.dateEpreuve ? `<div class="garde-date">${this._esc(dateStr)}</div>` : ''}
         </div>
-
-        <div class="som-doc-label">
-          <span class="som-doc-type">${this._esc(typeDoc)}</span>
+        <div class="garde-right">
+          <div class="garde-doc-type">${this._esc(typeDoc)}</div>
+          <div class="garde-edition">Édité le ${now}</div>
         </div>
-
-        <div class="som-stats-grid">
-          <div class="som-stat-card som-stat-primary">
-            <div class="som-stat-val">${nbEleves}</div>
-            <div class="som-stat-label">Candidats affectés</div>
-          </div>
-          <div class="som-stat-card">
-            <div class="som-stat-val">${nbPages}</div>
-            <div class="som-stat-label">Page${nbPages > 1 ? 's' : ''} générée${nbPages > 1 ? 's' : ''}</div>
-          </div>
-          <div class="som-stat-card">
-            <div class="som-stat-val">${nbJurysUtilises}</div>
-            <div class="som-stat-label">Jury${nbJurysUtilises > 1 ? 's' : ''}</div>
-          </div>
-          <div class="som-stat-card">
-            <div class="som-stat-val">${nbCreneaux}</div>
-            <div class="som-stat-label">Créneau${nbCreneaux > 1 ? 'x' : ''}</div>
-          </div>
-          ${nbNonAff > 0 ? `
-          <div class="som-stat-card som-stat-warn">
-            <div class="som-stat-val">${nbNonAff}</div>
-            <div class="som-stat-label">Non affecté${nbNonAff > 1 ? 's' : ''}</div>
-          </div>` : ''}
-        </div>
-
-        <div class="som-classes-section">
-          <h3 class="som-classes-titre">Répartition par classe</h3>
-          <table class="som-classes-table">
-            <thead>
-              <tr><th>Classe</th><th>Candidats</th></tr>
-            </thead>
-            <tbody>
-              ${lignesClasses}
-              <tr class="som-total-row">
-                <td class="som-td-classe"><strong>TOTAL</strong></td>
-                <td class="som-td-nb"><strong>${elevesConcernes.size}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="som-footer">
-          <p>Document généré le ${now}</p>
-          <p>${this._esc(p.etablissement)} — ${this._esc(typeLabel)} — Oral ${this._esc(p.annee)}</p>
-        </div>
-
-      </div>`;
+      </div>
+      <div class="garde-row-stats">
+        <div class="garde-stat"><span class="garde-stat-val">${nbEleves}</span><span class="garde-stat-lbl">Candidats</span></div>
+        <div class="garde-stat"><span class="garde-stat-val">${nbPages}</span><span class="garde-stat-lbl">Page${nbPages > 1 ? 's' : ''}</span></div>
+        <div class="garde-stat"><span class="garde-stat-val">${nbJurys}</span><span class="garde-stat-lbl">Jury${nbJurys > 1 ? 's' : ''}</span></div>
+        <div class="garde-stat"><span class="garde-stat-val">${nbCren}</span><span class="garde-stat-lbl">Créneaux</span></div>
+        ${nbNonAff > 0 ? `<div class="garde-stat garde-stat-warn"><span class="garde-stat-val">${nbNonAff}</span><span class="garde-stat-lbl">Non affectés</span></div>` : ''}
+        <div class="garde-classes">${colonnesClasses}</div>
+      </div>
+    </div>`;
   },
 
   convocationsEleves() {
@@ -440,12 +394,10 @@ const Print = {
         </div>`;
     });
 
-    const _som1 = this._pageSommaire(
-      'Convocations élèves',
-      elevesAffectes.length,
-      elevesAffectes.length
-    );
-    this._imprimer(_som1 + pages);
+    // Bandeau de garde injecté en tête de la première page (pas de page séparée)
+    const _garde1 = this._bandeauGarde('Convocations élèves', elevesAffectes.length, elevesAffectes.length);
+    const _pages1 = pages.replace(/(<div class="print-page convocation-eleve">)/, _garde1 + '$1');
+    this._imprimer(_pages1);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -571,8 +523,9 @@ const Print = {
     if (!pages) { notifier('Aucun créneau affecté.', 'warning'); return; }
     const _nbJurysP = AppData.jurys.filter(j => AppData.affectation.some(c => c.juryId === j.id)).length;
     const _nbElevJ  = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
-    const _som2     = this._pageSommaire('Convocations jurys', _nbJurysP, _nbElevJ);
-    this._imprimer(_som2 + pages);
+    const _garde2   = this._bandeauGarde('Convocations jurys', _nbJurysP, _nbElevJ);
+    const _pages2   = pages.replace(/(<div class="print-page convocation-jury">)/, _garde2 + '$1');
+    this._imprimer(_pages2);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -635,8 +588,9 @@ const Print = {
     html += '</div>';
     const _nbElevR = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
     const _nbJurR  = AppData.jurys.filter(j => AppData.affectation.some(c => c.juryId === j.id)).length;
-    const _som3    = this._pageSommaire('Récapitulatif candidats', _nbJurR + 1, _nbElevR);
-    this._imprimer(_som3 + html);
+    const _garde3  = this._bandeauGarde('Récapitulatif candidats', _nbJurR + 1, _nbElevR);
+    const _html3   = html.replace(/(<div class="print-page recap-page">)/, '$1' + _garde3);
+    this._imprimer(_html3);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -715,8 +669,9 @@ const Print = {
     if (!html) { notifier('Aucun créneau à émarger.', 'warning'); return; }
     const _nbElevE = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
     const _nbPagE  = AppData.jurys.filter(j => AppData.affectation.some(c => c.juryId === j.id)).length;
-    const _som4    = this._pageSommaire("Feuille d'émargement", _nbPagE, _nbElevE);
-    this._imprimer(_som4 + html);
+    const _garde4  = this._bandeauGarde("Feuille d'émargement", _nbPagE, _nbElevE);
+    const _html4   = html.replace(/(<div class="print-page emarg-page">)/, '$1' + _garde4);
+    this._imprimer(_html4);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -752,8 +707,9 @@ const Print = {
         </div>
       </div>`;
     const _nbElevC = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
-    const _som5    = this._pageSommaire('Consignes jury', 1, _nbElevC);
-    this._imprimer(_som5 + html);
+    const _garde5  = this._bandeauGarde('Consignes jury', 1, _nbElevC);
+    const _html5   = html.replace(/(<div class="print-page consignes-page">)/, '$1' + _garde5);
+    this._imprimer(_html5);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -1003,75 +959,67 @@ const Print = {
       ? `<img src="${cfg.logoBase64}" class="listing-logo" alt="Logo" />`
       : '';
 
-    // Découper en pages de NB_PAR_PAGE lignes
-    // A3 portrait ≈ 420×297mm → avec marges 1.5cm : zone ≈ 390×265mm
-    // Font 14pt → ligne ≈ 9mm → ~38 lignes. On prend 30 pour lisibilité maximale.
-    const NB_PAR_PAGE = 28;
-    const nbPages = Math.ceil(candidats.length / NB_PAR_PAGE);
+    // Un seul bloc continu — le navigateur gère la pagination naturellement.
+    // Le <thead> avec repeat-header assure que l'en-tête de colonne
+    // se répète sur chaque page imprimée sans aucun saut forcé.
+    const nbPages = 1; // 1 seul bloc, pagination naturelle
 
-    let pages = '';
+    const toutesLignes = candidats.map((c, i) => {
+      const rang = i + 1;
+      const flags = [];
+      if (c.amenagement) flags.push('<span class="listing-badge-amem">1/3 tps</span>');
+      if (c.prioritaire)  flags.push('<span class="listing-badge-prio">Prior.</span>');
+      const parity = rang % 2 === 0 ? 'listing-row-even' : '';
+      return `<tr class="listing-row ${parity}">
+        <td class="listing-cell-rang">${rang}</td>
+        <td class="listing-cell-nom"><strong>${this._esc(c.nom)}</strong> ${this._esc(c.prenom)} ${flags.join('')}</td>
+        <td class="listing-cell-classe">${this._esc(c.classe)}</td>
+        <td class="listing-cell-heure">${this._esc(c.heure)}</td>
+        <td class="listing-cell-salle"><strong>${this._esc(c.salle)}</strong></td>
+        <td class="listing-cell-jury">${this._esc(c.juryNom)}</td>
+      </tr>`;
+    }).join('');
 
-    for (let p_idx = 0; p_idx < nbPages; p_idx++) {
-      const tranche = candidats.slice(p_idx * NB_PAR_PAGE, (p_idx + 1) * NB_PAR_PAGE);
-      const debut   = p_idx * NB_PAR_PAGE + 1;
-      const fin     = debut + tranche.length - 1;
-
-      const lignes = tranche.map((c, i) => {
-        const rang = debut + i;
-        const flags = [];
-        if (c.amenagement) flags.push('<span class="listing-badge-amem">1/3 tps</span>');
-        if (c.prioritaire)  flags.push('<span class="listing-badge-prio">Prior.</span>');
-        const parity = rang % 2 === 0 ? 'listing-row-even' : '';
-        return `<tr class="listing-row ${parity}">
-          <td class="listing-cell-rang">${rang}</td>
-          <td class="listing-cell-nom"><strong>${this._esc(c.nom)}</strong> ${this._esc(c.prenom)} ${flags.join('')}</td>
-          <td class="listing-cell-classe">${this._esc(c.classe)}</td>
-          <td class="listing-cell-heure">${this._esc(c.heure)}</td>
-          <td class="listing-cell-salle"><strong>${this._esc(c.salle)}</strong></td>
-          <td class="listing-cell-jury">${this._esc(c.juryNom)}</td>
-        </tr>`;
-      }).join('');
-
-      pages += `
-        <div class="print-page print-page-a3p listing-page">
-          <div class="listing-header">
-            <div class="listing-header-left">
-              ${logoHtml}
-              <div>
-                <div class="listing-etab">${this._esc(p.etablissement)}</div>
-                <div class="listing-annee">Année scolaire ${this._esc(p.annee)}</div>
-              </div>
-            </div>
-            <div class="listing-header-center">
-              <div class="listing-titre">${this._esc(typeLabel)}</div>
-              <div class="listing-sous-titre">LISTE DES CANDIDATS — ORDRE ALPHABÉTIQUE</div>
-              ${dateStr ? `<div class="listing-date">${this._esc(dateStr)}</div>` : ''}
-            </div>
-            <div class="listing-header-right">
-              <div class="listing-page-info">Page ${p_idx + 1} / ${nbPages}</div>
-              <div class="listing-range">Candidats ${debut} à ${fin}</div>
-              <div class="listing-total">Total : ${candidats.length}</div>
+    // Un seul print-page-a3p : pas de page-break-after intermédiaire
+    // Le thead repeat-header (via CSS) répète les colonnes sur chaque feuille imprimée
+    const pages = `
+      <div class="print-page-a3p listing-page-continue">
+        <div class="listing-header">
+          <div class="listing-header-left">
+            ${logoHtml}
+            <div>
+              <div class="listing-etab">${this._esc(p.etablissement)}</div>
+              <div class="listing-annee">Année scolaire ${this._esc(p.annee)}</div>
             </div>
           </div>
-          <table class="listing-table">
-            <thead>
-              <tr>
-                <th class="listing-th-rang">#</th>
-                <th class="listing-th-nom">Nom — Prénom</th>
-                <th class="listing-th-classe">Classe</th>
-                <th class="listing-th-heure">Heure de passage</th>
-                <th class="listing-th-salle">Salle</th>
-                <th class="listing-th-jury">Jury</th>
-              </tr>
-            </thead>
-            <tbody>${lignes}</tbody>
-          </table>
-        </div>`;
-    }
+          <div class="listing-header-center">
+            <div class="listing-titre">${this._esc(typeLabel)}</div>
+            <div class="listing-sous-titre">LISTE DES CANDIDATS — ORDRE ALPHABÉTIQUE</div>
+            ${dateStr ? `<div class="listing-date">${this._esc(dateStr)}</div>` : ''}
+          </div>
+          <div class="listing-header-right">
+            <div class="listing-total-label">Total : <strong>${candidats.length}</strong> candidats</div>
+          </div>
+        </div>
+        <table class="listing-table">
+          <thead>
+            <tr>
+              <th class="listing-th-rang">#</th>
+              <th class="listing-th-nom">Nom — Prénom</th>
+              <th class="listing-th-classe">Classe</th>
+              <th class="listing-th-heure">Heure de passage</th>
+              <th class="listing-th-salle">Salle</th>
+              <th class="listing-th-jury">Jury</th>
+            </tr>
+          </thead>
+          <tbody>${toutesLignes}</tbody>
+        </table>
+      </div>`;
 
-    const sommaire = this._pageSommaire('Listing alphabétique (A3)', nbPages, candidats.length);
-    // Pas de sommaire sur le listing affichage hall — on imprime directement
-    this._imprimer(pages);
+    const _garde6 = this._bandeauGarde('Listing alphabétique (A3)', candidats.length, candidats.length);
+    // Injecter le bandeau dans le listing-header
+    const _pages6 = pages.replace(/(<div class="listing-header">)/, _garde6 + '$1');
+    this._imprimer(_pages6);
   },
 
 
@@ -1145,25 +1093,6 @@ const Print = {
               <div class="affiche-jury-label">JURY N°</div>
               <div class="affiche-jury-num">${juryNum}</div>
               ${jury.langue ? `<div class="affiche-langue">${this._esc(jury.langue)}</div>` : ''}
-            </div>
-          </div>
-
-          <div class="affiche-infos">
-            <div class="affiche-info-item">
-              <span class="affiche-info-label">Enseignant(s)</span>
-              <span class="affiche-info-val">${membres.map(m=>this._esc(m)).join(' &amp; ')}</span>
-            </div>
-            <div class="affiche-info-item">
-              <span class="affiche-info-label">Candidats</span>
-              <span class="affiche-info-val">${nbCandidats}</span>
-            </div>
-            <div class="affiche-info-item">
-              <span class="affiche-info-label">Horaires</span>
-              <span class="affiche-info-val">${this._esc(hDebut)} → ${this._esc(hFinale)}</span>
-            </div>
-            <div class="affiche-info-item">
-              <span class="affiche-info-label">Pause(s)</span>
-              <span class="affiche-info-val">${this._esc(pausesStr)}</span>
             </div>
           </div>
         </div>`;
