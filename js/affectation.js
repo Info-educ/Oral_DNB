@@ -1,18 +1,25 @@
 /**
  * affectation.js — Moteur d'affectation automatique
- * Oral DNB · Collège Joliot Curie  —  Rev.3
+ * Oral DNB · Collège Joliot Curie  —  Rev.4
  *
- * Contraintes :
- *   1. Langue avec priorité (rev.5) :
- *        élève Anglais  → jury Anglais en priorité, puis jurys sans langue
- *        élève Espagnol → jury Espagnol en priorité, puis jurys sans langue
- *        élève sans langue → jury sans langue d'abord, puis jurys avec langue (complétion)
- *        jury avec langue → élèves de la langue en priorité, complété par sans-langue
- *        jury sans langue → élèves sans langue uniquement
+ * Nouveautés Rev.4 :
+ *   — Pauses ADAPTATIVES par jury :
+ *       l'heure indiquée est "indicative" ; la pause s'insère juste après
+ *       le candidat qui se termine le plus près de l'horaire cible,
+ *       afin de ne jamais couper un passage en cours.
+ *   — Affectation des non-affectés :
+ *       bouton "Affecter les non-affectés" visible après affectation ;
+ *       place les élèves restants même si la session dépasse l'heure de fin.
+ *   — Déplacement par Drag & Drop :
+ *       les lignes de la table affectation sont draggables ;
+ *       on peut déposer un créneau sur la carte d'un autre jury.
+ *
+ * Contraintes maintenues :
+ *   1. Langue avec priorité : élève Anglais → jury Anglais en priorité
  *   2. Binômes : même jury + même créneau + dureeBinome
  *   3. Tiers-temps : durée × 4/3 arrondie au multiple de 5 min
  *   4. Prioritaires : premiers créneaux de leur jury
- *   5. Pause méridienne : aucun chevauchement
+ *   5. Pauses : ADAPTATIVES (voir ci-dessus)
  *   6. Capacité : calculée automatiquement si jury.capacite === 0
  */
 
@@ -27,15 +34,10 @@ const Affectation = {
   /**
    * Lance l'affectation complète.
    * @param {Map} confirmations - Map<eleveId, partenaireId|null> pour les binômes flous
-   *   null = rejet (passe en solo), un id = partenaire confirmé
-   * @returns {{
-   *   ok: boolean,
-   *   message: string,
-   *   avertissements: string[],
-   *   confirmationsRequises: Object[]   ← non vide = UI doit demander confirmation avant de relancer
-   * }}
+   * @param {boolean} nonAffectesUniquement - si true, n'affecte que les élèves non encore affectés
+   * @returns {{ ok, message, avertissements, confirmationsRequises }}
    */
-  lancer(confirmations = new Map()) {
+  lancer(confirmations = new Map(), nonAffectesUniquement = false) {
     const avert = [];
 
     if (AppData.nbJurys()  === 0) return { ok:false, message:'Aucun jury saisi.',  avertissements:[], confirmationsRequises:[] };
@@ -43,55 +45,60 @@ const Affectation = {
 
     this._calculerCapaciteAuto(avert);
 
-    const { groupes, avertBinomes, confirmationsRequises } = this._resoudreBinomes(confirmations);
+    // Si on n'affecte que les non-affectés, on filtre les élèves déjà en créneau
+    let elevesATraiter = AppData.eleves;
+    if (nonAffectesUniquement) {
+      const dejaDansCreneaux = new Set(AppData.affectation.flatMap(c => c.eleveIds));
+      elevesATraiter = AppData.eleves.filter(e => !dejaDansCreneaux.has(e.id));
+      if (elevesATraiter.length === 0) {
+        return { ok:true, message:'Tous les élèves sont déjà affectés.', avertissements:[], confirmationsRequises:[] };
+      }
+    }
+
+    const { groupes, avertBinomes, confirmationsRequises } = this._resoudreBinomes(confirmations, elevesATraiter);
     avert.push(...avertBinomes);
 
-    // S'il y a des binômes flous non encore confirmés → interrompre et demander à l'utilisateur
     if (confirmationsRequises.length > 0) {
-      return {
-        ok                    : false,
-        message               : '',
-        avertissements        : avert,
-        confirmationsRequises,
-      };
+      return { ok:false, message:'', avertissements:avert, confirmationsRequises };
     }
 
     const groupesTries = this._trierGroupes(groupes);
-    const { plannings, avertAffect } = this._affecter(groupesTries);
+    const { plannings, avertAffect } = this._affecter(groupesTries, nonAffectesUniquement);
     avert.push(...avertAffect);
 
-    const creneaux = this._calculerHoraires(plannings);
-    AppData.affectation = creneaux;
+    // Recalcul des horaires : si mode non-affectés, on repart des créneaux existants par jury
+    const creneaux = this._calculerHoraires(plannings, nonAffectesUniquement);
 
-    const nbAff    = creneaux.reduce((s,c) => s + c.eleveIds.length, 0);
+    if (nonAffectesUniquement) {
+      // Fusionner les nouveaux créneaux avec les existants
+      AppData.affectation = [...AppData.affectation, ...creneaux];
+      this._recalculerTous();
+    } else {
+      AppData.affectation = creneaux;
+    }
+
+    const nbAff    = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
     const nbNonAff = AppData.nbEleves() - nbAff;
     if (nbNonAff > 0) avert.push(`⚠ ${nbNonAff} élève(s) non affecté(s) — vérifiez la langue vivante et la capacité des jurys.`);
 
-    return {
-      ok                    : true,
-      message               : `Affectation terminée : ${nbAff} élève(s) réparti(s) en ${creneaux.length} créneaux.`,
-      avertissements        : avert,
-      confirmationsRequises : [],
-    };
+    const msg = nonAffectesUniquement
+      ? `${creneaux.length} créneau(x) ajouté(s) pour les élèves non affectés.`
+      : `Affectation terminée : ${nbAff} élève(s) réparti(s) en ${AppData.affectation.length} créneaux.`;
+
+    return { ok:true, message:msg, avertissements:avert, confirmationsRequises:[] };
   },
 
   // ──────────────────────────────────────────────────────────────
   // CAPACITÉ AUTOMATIQUE
   // ──────────────────────────────────────────────────────────────
 
-  /**
-   * Si un jury a capacite === 0, calcule sa capacité à partir de la plage horaire.
-   * Utilise AppData.calculerNbJurys() comme référence.
-   */
   _calculerCapaciteAuto(avert) {
     const calcul = AppData.calculerNbJurys();
     if (!calcul.ok) {
       avert.push(`Calcul automatique de capacité impossible : ${calcul.erreur}`);
-      // Fallback : 10 élèves par jury
       AppData.jurys.forEach(j => { if (!j.capacite) j.capacite = 10; });
       return;
     }
-
     AppData.jurys.forEach(j => {
       if (!j.capacite || j.capacite === 0) {
         j.capacite = calcul.capaciteParJury;
@@ -100,23 +107,15 @@ const Affectation = {
   },
 
   // ──────────────────────────────────────────────────────────────
-  // CORRESPONDANCE APPROXIMATIVE (fuzzy matching)
+  // FUZZY MATCHING
   // ──────────────────────────────────────────────────────────────
 
-  /**
-   * Normalise une chaîne pour la comparaison :
-   * minuscules, sans accents, sans espaces multiples.
-   */
   _norm(str) {
     return (str || '').toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/\s+/g, ' ').trim();
   },
 
-  /**
-   * Distance de Levenshtein entre deux chaînes.
-   * @returns {number} nombre d'opérations (insertion, suppression, substitution)
-   */
   _levenshtein(a, b) {
     if (a === b) return 0;
     if (!a.length) return b.length;
@@ -125,9 +124,7 @@ const Affectation = {
     for (let i = 1; i <= a.length; i++) {
       let prev = i;
       for (let j = 1; j <= b.length; j++) {
-        const val = a[i-1] === b[j-1]
-          ? dp[j-1]
-          : 1 + Math.min(dp[j], prev, dp[j-1]);
+        const val = a[i-1] === b[j-1] ? dp[j-1] : 1 + Math.min(dp[j], prev, dp[j-1]);
         dp[j-1] = prev;
         prev = val;
       }
@@ -136,154 +133,89 @@ const Affectation = {
     return dp[b.length];
   },
 
-  /**
-   * Score de similarité entre 0 et 1 (1 = identique).
-   */
   _similarite(a, b) {
-    const na = this._norm(a);
-    const nb = this._norm(b);
+    const na = this._norm(a), nb = this._norm(b);
     if (na === nb) return 1;
     const maxLen = Math.max(na.length, nb.length);
     if (maxLen === 0) return 1;
     return 1 - this._levenshtein(na, nb) / maxLen;
   },
 
-  /**
-   * Cherche le meilleur partenaire de binôme pour un élève parmi tous les élèves.
-   * Retourne { eleve, score, exact } ou null si aucun candidat décent.
-   *
-   * Seuils :
-   *   score ≥ 0.85  → match automatique (faute mineure : 1-2 caractères)
-   *   score 0.60-0.84 → match incertain → demande de confirmation
-   *   score < 0.60  → pas de match
-   */
   _chercherPartenaire(eleve, indexExact) {
     const cible = this._norm(eleve.binomeAvec);
-
-    // 1. Match exact d'abord
     const exact = indexExact.get(cible);
     if (exact) return { eleve: exact, score: 1, exact: true };
 
-    // 2. Fuzzy : comparer avec tous les élèves
-    let meilleur = null;
-    let meilleurScore = 0;
-
+    let meilleur = null, meilleurScore = 0;
     AppData.eleves.forEach(candidat => {
       if (candidat.id === eleve.id) return;
       const nomComplet = this._norm(`${candidat.nom} ${candidat.prenom}`);
       const score = this._similarite(cible, nomComplet);
-      if (score > meilleurScore) {
-        meilleurScore = score;
-        meilleur = candidat;
-      }
+      if (score > meilleurScore) { meilleurScore = score; meilleur = candidat; }
     });
 
-    if (meilleurScore >= 0.85) return { eleve: meilleur, score: meilleurScore, exact: true  }; // auto
-    if (meilleurScore >= 0.60) return { eleve: meilleur, score: meilleurScore, exact: false }; // confirmation
-    return null; // pas de match
+    if (meilleurScore >= 0.85) return { eleve: meilleur, score: meilleurScore, exact: true  };
+    if (meilleurScore >= 0.60) return { eleve: meilleur, score: meilleurScore, exact: false };
+    return null;
   },
 
   // ──────────────────────────────────────────────────────────────
-  // PHASE 1 — BINÔMES avec fuzzy matching
+  // PHASE 1 — BINÔMES
   // ──────────────────────────────────────────────────────────────
 
-  /**
-   * Résout les binômes avec correspondance approximative.
-   *
-   * @param {Map} confirmations - Map<eleveId, partenaireId> confirmés manuellement
-   *                              (vide au premier appel, peuplée après confirmation UI)
-   * @returns {{
-   *   groupes: Object[],
-   *   avertBinomes: string[],
-   *   confirmationsRequises: Object[]   ← cas flous à confirmer par l'utilisateur
-   * }}
-   */
-  _resoudreBinomes(confirmations = new Map()) {
-    const avertBinomes = [];
-    const confirmationsRequises = [];
+  _resoudreBinomes(confirmations = new Map(), elevesATraiter = null) {
+    const avertBinomes = [], confirmationsRequises = [];
     const traites = new Set();
     const groupes = [];
+    const eleves = elevesATraiter || AppData.eleves;
 
-    // Index exact : "NOM PRENOM" normalisé → élève
     const indexExact = new Map();
-    AppData.eleves.forEach(e => {
-      indexExact.set(this._norm(`${e.nom} ${e.prenom}`), e);
-    });
+    AppData.eleves.forEach(e => indexExact.set(this._norm(`${e.nom} ${e.prenom}`), e));
 
     const creerGroupe = (e, partenaire) => {
-      if (traites.has(partenaire.id)) return; // déjà groupé par l'autre sens
+      if (traites.has(partenaire.id)) return;
       const langOk = !e.langue || !partenaire.langue || e.langue === partenaire.langue;
       if (!langOk) {
-        avertBinomes.push(`Binôme ${e.nom} ${e.prenom} / ${partenaire.nom} ${partenaire.prenom} : langues incompatibles (${e.langue} / ${partenaire.langue}). Passages en solo.`);
+        avertBinomes.push(`Binôme ${e.nom} ${e.prenom} / ${partenaire.nom} ${partenaire.prenom} : langues incompatibles. Passages en solo.`);
         groupes.push({ eleveIds:[e.id],          isBinome:false, langue:e.langue,         prioritaire:e.prioritaire });
         groupes.push({ eleveIds:[partenaire.id], isBinome:false, langue:partenaire.langue, prioritaire:partenaire.prioritaire });
       } else {
-        groupes.push({
-          eleveIds   : [e.id, partenaire.id],
-          isBinome   : true,
-          langue     : e.langue || partenaire.langue || '',
-          prioritaire: e.prioritaire || partenaire.prioritaire,
-        });
+        groupes.push({ eleveIds:[e.id, partenaire.id], isBinome:true, langue:e.langue||partenaire.langue||'', prioritaire:e.prioritaire||partenaire.prioritaire });
       }
-      traites.add(e.id);
-      traites.add(partenaire.id);
+      traites.add(e.id); traites.add(partenaire.id);
     };
 
-    AppData.eleves.forEach(e => {
+    eleves.forEach(e => {
       if (traites.has(e.id)) return;
-
       if (!e.binomeAvec) {
         groupes.push({ eleveIds:[e.id], isBinome:false, langue:e.langue, prioritaire:e.prioritaire });
-        traites.add(e.id);
-        return;
+        traites.add(e.id); return;
       }
-
-      // Binôme confirmé manuellement ?
       if (confirmations.has(e.id)) {
         const partenaireId = confirmations.get(e.id);
         const partenaire = AppData.getEleve(partenaireId);
-        if (partenaire && !traites.has(partenaire.id)) {
-          creerGroupe(e, partenaire);
-        } else if (!partenaire) {
-          // Rejet manuel → solo
-          groupes.push({ eleveIds:[e.id], isBinome:false, langue:e.langue, prioritaire:e.prioritaire });
-          traites.add(e.id);
-        }
+        if (partenaire && !traites.has(partenaire.id)) { creerGroupe(e, partenaire); }
+        else if (!partenaire) { groupes.push({ eleveIds:[e.id], isBinome:false, langue:e.langue, prioritaire:e.prioritaire }); traites.add(e.id); }
         return;
       }
-
       const resultat = this._chercherPartenaire(e, indexExact);
-
       if (!resultat) {
-        // Aucun candidat → solo
         avertBinomes.push(`Binôme introuvable pour ${e.nom} ${e.prenom} → "${e.binomeAvec}". Passage en solo.`);
         groupes.push({ eleveIds:[e.id], isBinome:false, langue:e.langue, prioritaire:e.prioritaire });
-        traites.add(e.id);
-        return;
+        traites.add(e.id); return;
       }
-
       if (resultat.exact) {
-        // Match automatique (exact ou faute mineure ≥ 0.85)
         if (!traites.has(resultat.eleve.id)) {
-          const pct = Math.round(resultat.score * 100);
-          if (resultat.score < 1) {
-            avertBinomes.push(`Binôme approximatif (${pct}% de similarité) : "${e.binomeAvec}" → ${resultat.eleve.nom} ${resultat.eleve.prenom}`);
-          }
+          if (resultat.score < 1) avertBinomes.push(`Binôme approximatif (${Math.round(resultat.score*100)}%) : "${e.binomeAvec}" → ${resultat.eleve.nom} ${resultat.eleve.prenom}`);
           creerGroupe(e, resultat.eleve);
         }
       } else {
-        // Match incertain (0.60–0.84) → demander confirmation
-        const pct = Math.round(resultat.score * 100);
         confirmationsRequises.push({
-          eleveId      : e.id,
-          eleveNom     : `${e.nom} ${e.prenom}`,
-          binomeSaisi  : e.binomeAvec,
-          suggeréId    : resultat.eleve.id,
-          suggeréNom   : `${resultat.eleve.nom} ${resultat.eleve.prenom}`,
-          score        : resultat.score,
-          scorePct     : pct,
+          eleveId:e.id, eleveNom:`${e.nom} ${e.prenom}`,
+          binomeSaisi:e.binomeAvec, suggeréId:resultat.eleve.id,
+          suggeréNom:`${resultat.eleve.nom} ${resultat.eleve.prenom}`,
+          score:resultat.score, scorePct:Math.round(resultat.score*100),
         });
-        // Provisoirement en solo (sera remplacé si l'utilisateur confirme)
         groupes.push({ eleveIds:[e.id], isBinome:false, langue:e.langue, prioritaire:e.prioritaire });
         traites.add(e.id);
       }
@@ -312,101 +244,57 @@ const Affectation = {
   // PHASE 3 — AFFECTATION
   // ──────────────────────────────────────────────────────────────
 
-  /**
-   * Priorité langue pour un jury donné face à un groupe d'élèves.
-   *
-   * Nouvelle règle (rev.5) :
-   *   - Jury AVEC langue :
-   *       → Priorité 1 : élèves dont la langue correspond (ex. Anglais → Anglais)
-   *       → Priorité 2 : élèves SANS langue (pour compléter si places restantes)
-   *       → Interdit   : élèves d'une autre langue spécifiée (ex. Espagnol dans jury Anglais)
-   *   - Jury SANS langue :
-   *       → Élèves SANS langue uniquement (les élèves avec langue ont déjà leur jury)
-   *
-   * @returns {'exact'|'fill'|'incompatible'}
-   *   'exact'        → langue élève = langue jury (passage en priorité 1)
-   *   'fill'         → jury avec langue + élève sans langue (remplissage)
-   *   'incompatible' → pas de place pour cet élève dans ce jury
-   */
   _prioriteLangue(juryLangue, eleveLangue) {
     const jl = (juryLangue  || '').trim().toLowerCase();
     const el = (eleveLangue || '').trim().toLowerCase();
-
-    if (jl === el) return 'exact';           // Les deux identiques (incl. les deux vides)
-    if (jl !== '' && el === '') return 'fill'; // Jury avec langue, élève sans langue → remplissage
-    return 'incompatible';                    // Toute autre combinaison
+    if (jl === el) return 'exact';
+    if (jl !== '' && el === '') return 'fill';
+    return 'incompatible';
   },
 
-  _affecter(groupesTries) {
+  _affecter(groupesTries, sansCap = false) {
     const avertAffect = [];
     const plannings = new Map();
     AppData.jurys.forEach(j => plannings.set(j.id, { jury:j, groupes:[], nbEleves:0 }));
 
-    // Algorithme en 2 passes :
-    //   Passe 1 — placer tous les élèves AVEC langue dans leurs jurys correspondants
-    //   Passe 2 — placer les élèves SANS langue (jurys sans langue d'abord, puis compléter les jurys avec langue)
-
-    const avecLangue  = groupesTries.filter(g => g.langue !== '');
-    const sansLangue  = groupesTries.filter(g => g.langue === '');
+    const avecLangue = groupesTries.filter(g => g.langue !== '');
+    const sansLangue = groupesTries.filter(g => g.langue === '');
 
     const placerGroupe = (groupe, jurysCandidats, avertir) => {
-      // Parmi les candidats, prendre le moins chargé avec de la place
+      // En mode non-affectés, la capacité est ignorée (sansCap=true)
       const disponibles = jurysCandidats.filter(j => {
         const plan = plannings.get(j.id);
+        if (sansCap) return true;
         return plan.nbEleves + groupe.eleveIds.length <= j.capacite;
       });
-
       if (disponibles.length === 0) {
         if (avertir) {
-          const noms = groupe.eleveIds.map(id => {
-            const e = AppData.getEleve(id);
-            return e ? `${e.nom} ${e.prenom}` : '?';
-          }).join(', ');
+          const noms = groupe.eleveIds.map(id => { const e=AppData.getEleve(id); return e?`${e.nom} ${e.prenom}`:'?'; }).join(', ');
           const langLabel = groupe.langue ? `"${groupe.langue}"` : 'sans langue';
           avertAffect.push(`Aucun jury ${langLabel} disponible pour : ${noms}`);
         }
         return false;
       }
-
       disponibles.sort((a,b) => plannings.get(a.id).nbEleves - plannings.get(b.id).nbEleves);
       const jury = disponibles[0];
       const plan = plannings.get(jury.id);
-      plan.groupes.push(groupe);
-      plan.nbEleves += groupe.eleveIds.length;
+      plan.groupes.push(groupe); plan.nbEleves += groupe.eleveIds.length;
       return true;
     };
 
-    // ── Passe 1 : élèves avec langue → jurys de même langue ──
+    // Passe 1 : élèves avec langue → jurys de même langue
     avecLangue.forEach(groupe => {
-      const jCompatibles = AppData.jurys.filter(j =>
-        this._prioriteLangue(j.langue, groupe.langue) === 'exact'
-      );
+      const jCompatibles = AppData.jurys.filter(j => this._prioriteLangue(j.langue, groupe.langue) === 'exact');
       placerGroupe(groupe, jCompatibles, true);
     });
 
-    // ── Passe 2 : élèves sans langue ─────────────────────────
-    // 2a. D'abord les jurys sans langue (correspondance exacte)
-    // 2b. Ensuite les jurys avec langue qui ont encore de la place (remplissage)
+    // Passe 2 : élèves sans langue
     sansLangue.forEach(groupe => {
-      // Essai 2a : jurys sans langue
-      const jSansLangue = AppData.jurys.filter(j =>
-        this._prioriteLangue(j.langue, '') === 'exact'
-      );
-      const place2a = placerGroupe(groupe, jSansLangue, false);
-      if (place2a) return;
-
-      // Essai 2b : jurys avec langue (remplissage)
-      const jAvecLangue = AppData.jurys.filter(j =>
-        this._prioriteLangue(j.langue, '') === 'fill'
-      );
-      const place2b = placerGroupe(groupe, jAvecLangue, false);
-      if (place2b) return;
-
-      // Aucune place nulle part
-      const noms = groupe.eleveIds.map(id => {
-        const e = AppData.getEleve(id);
-        return e ? `${e.nom} ${e.prenom}` : '?';
-      }).join(', ');
+      const jSansLangue = AppData.jurys.filter(j => this._prioriteLangue(j.langue, '') === 'exact');
+      if (placerGroupe(groupe, jSansLangue, false)) return;
+      const jAvecLangue = AppData.jurys.filter(j => this._prioriteLangue(j.langue, '') === 'fill');
+      if (placerGroupe(groupe, jAvecLangue, false)) return;
+      const noms = groupe.eleveIds.map(id => { const e=AppData.getEleve(id); return e?`${e.nom} ${e.prenom}`:'?'; }).join(', ');
       avertAffect.push(`Aucun jury disponible pour (sans langue) : ${noms}`);
     });
 
@@ -414,35 +302,42 @@ const Affectation = {
   },
 
   // ──────────────────────────────────────────────────────────────
-  // PHASE 4 — HORAIRES
+  // PHASE 4 — HORAIRES (avec pauses ADAPTATIVES)
   // ──────────────────────────────────────────────────────────────
 
-  // Construit la liste des pauses actives triées par heure (en minutes)
+  /**
+   * Retourne les pauses actives triées, chacune avec son heure cible en minutes.
+   * Contrairement à avant, la pause n'a PAS de fin fixe — elle s'insère
+   * dynamiquement après le candidat qui finit le plus près de l'heure cible.
+   */
   _pausesActives() {
     return (AppData.params.pauses || [])
       .filter(p => p.active && p.duree > 0)
-      .map(p => ({ debut: AppData.enMinutes(p.heure), fin: AppData.enMinutes(p.heure) + parseInt(p.duree,10) }))
-      .sort((a,b) => a.debut - b.debut);
+      .map(p => ({
+        cible : AppData.enMinutes(p.heure),   // heure indicative en minutes
+        duree : parseInt(p.duree, 10),
+      }))
+      .sort((a,b) => a.cible - b.cible);
   },
 
-  // Avance le curseur au-delà de toute pause chevauchante (récursivement
-  // pour le cas où une pause suit immédiatement une autre)
-  _sauterPauses(curseur, duree, pauses) {
-    let c = curseur;
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const p of pauses) {
-        if (c < p.fin && (c + duree) > p.debut) {
-          c = p.fin;
-          changed = true;
-        }
-      }
-    }
-    return c;
-  },
-
-  _calculerHoraires(plannings) {
+  /**
+   * Calcule les créneaux horaires d'un planning de jury
+   * avec insertion ADAPTATIVE des pauses.
+   *
+   * Algorithme :
+   *   Pour chaque groupe à placer :
+   *     1. Vérifier si une pause non encore insérée a son heure cible ≤ curseur actuel
+   *        (le candidat précédent a dépassé ou atteint l'heure de la pause)
+   *        → insérer la pause MAINTENANT (après le candidat courant)
+   *     2. Sinon, vérifier si commencer ce groupe ferait dépasser l'heure cible
+   *        de la prochaine pause AVANT la fin du groupe
+   *        → ça signifie que le candidat PRÉCÉDENT était le plus proche
+   *        → insérer la pause avant ce groupe
+   *
+   * @param {Map} plannings
+   * @param {boolean} nonAffectesUniquement - si true, on ne traite que les nouveaux groupes
+   */
+  _calculerHoraires(plannings, nonAffectesUniquement = false) {
     const creneaux = [];
     const pauses   = this._pausesActives();
     const marge    = parseInt(AppData.params.margePassage, 10) || 0;
@@ -452,9 +347,29 @@ const Affectation = {
       if (!groupes.length) return;
 
       let curseur = AppData.enMinutes(jury.heureDebut || AppData.params.heureDebut);
-      let ordre   = 1;
 
-      groupes.forEach(groupe => {
+      // Si mode non-affectés, on repart de la fin du dernier créneau existant pour ce jury
+      if (nonAffectesUniquement) {
+        const existants = AppData.affectation.filter(c => c.juryId === jury.id);
+        if (existants.length > 0) {
+          const dernierFin = existants.reduce((maxFin, c) => {
+            const finMin = AppData.enMinutes(c.heureFin);
+            return finMin > maxFin ? finMin : maxFin;
+          }, 0);
+          curseur = dernierFin + marge;
+        }
+      }
+
+      let ordre = nonAffectesUniquement
+        ? (AppData.affectation.filter(c => c.juryId === jury.id).length + 1)
+        : 1;
+
+      // Pauses non encore insérées pour CE jury
+      // (chaque jury gère ses pauses indépendamment)
+      const pausesRestantes = pauses.map((p, i) => ({ ...p, idx: i, insere: false }));
+
+      groupes.forEach((groupe, gIdx) => {
+        // Calcul de la durée de ce créneau
         let duree;
         if (groupe.isBinome) {
           const am = groupe.eleveIds.some(id => AppData.getEleve(id)?.amenagement);
@@ -464,8 +379,30 @@ const Affectation = {
           duree = AppData.calculerDuree(e, false);
         }
 
-        // Sauter toutes les pauses actives qui chevauchent ce créneau
-        curseur = this._sauterPauses(curseur, duree, pauses);
+        // ── Gestion ADAPTATIVE des pauses ──────────────────────────
+        // Vérifier pour chaque pause non insérée si elle doit s'insérer AVANT ce groupe
+        for (const pause of pausesRestantes) {
+          if (pause.insere) continue;
+
+          // Cas 1 : le curseur a déjà dépassé l'heure cible de la pause
+          // (le candidat précédent finissait après l'heure cible → on insère maintenant)
+          if (gIdx > 0 && curseur >= pause.cible) {
+            curseur += pause.duree;
+            pause.insere = true;
+            continue;
+          }
+
+          // Cas 2 : ce groupe DÉPASSERAIT l'heure cible en cours de route
+          // → la pause s'insère AVANT ce groupe (on attendait le fin du précédent)
+          // Vérifier si le curseur est avant la cible et que ce groupe passerait par-dessus
+          if (curseur < pause.cible && (curseur + duree) > pause.cible) {
+            // Le candidat courant dépasserait l'heure de pause :
+            // la pause s'insère AVANT ce groupe (le candidat précédent était le plus proche)
+            curseur += pause.duree;
+            pause.insere = true;
+            continue;
+          }
+        }
 
         creneaux.push({
           juryId    : jury.id,
@@ -515,8 +452,54 @@ const Affectation = {
     return null;
   },
 
+  /**
+   * Déplace un créneau par son ID vers un autre jury et une nouvelle position.
+   * Utilisé par le drag & drop.
+   * @param {number} creneauIdx - index dans AppData.affectation
+   * @param {number} juryIdCible - id du jury de destination
+   * @param {number|null} avantCreneauIdx - insérer avant ce créneau (null = en fin)
+   */
+  deplacerCreneauDnD(creneauIdx, juryIdCible, avantCreneauIdx = null) {
+    const creneau = AppData.affectation[creneauIdx];
+    if (!creneau) return 'Créneau introuvable.';
+    const juryCible = AppData.getJury(juryIdCible);
+    if (!juryCible) return 'Jury cible introuvable.';
+
+    const e = AppData.getEleve(creneau.eleveIds[0]);
+    if (e) {
+      const prio = this._prioriteLangue(juryCible.langue, e.langue);
+      if (prio === 'incompatible') {
+        return `Incompatibilité de langue (élève: ${e.langue||'sans langue'} / jury: ${juryCible.langue||'sans langue'}).`;
+      }
+    }
+
+    // Retirer le créneau de sa position actuelle
+    AppData.affectation.splice(creneauIdx, 1);
+
+    // Mettre à jour le juryId
+    creneau.juryId = juryIdCible;
+
+    // Déterminer la position d'insertion
+    if (avantCreneauIdx !== null) {
+      // L'index a pu changer si le créneau était avant la cible
+      const realIdx = avantCreneauIdx > creneauIdx ? avantCreneauIdx - 1 : avantCreneauIdx;
+      AppData.affectation.splice(realIdx, 0, creneau);
+    } else {
+      // Insérer en fin de la liste du jury cible
+      const dernier = [...AppData.affectation].reverse().findIndex(c => c.juryId === juryIdCible);
+      if (dernier >= 0) {
+        AppData.affectation.splice(AppData.affectation.length - dernier, 0, creneau);
+      } else {
+        AppData.affectation.push(creneau);
+      }
+    }
+
+    this._recalculerTous();
+    return null;
+  },
+
   _recalculerTous() {
-    const parJury    = new Map();
+    const parJury = new Map();
     AppData.jurys.forEach(j => parJury.set(j.id, []));
     AppData.affectation.forEach(c => { if (parJury.has(c.juryId)) parJury.get(c.juryId).push(c); });
 
@@ -527,9 +510,17 @@ const Affectation = {
     parJury.forEach((creneaux, juryId) => {
       const jury = AppData.getJury(juryId);
       if (!jury || !creneaux.length) return;
+
       let curseur = AppData.enMinutes(jury.heureDebut || AppData.params.heureDebut);
+      const pausesRestantes = pauses.map(p => ({ ...p, insere: false }));
+
       creneaux.forEach((c, i) => {
-        curseur = this._sauterPauses(curseur, c.duree, pauses);
+        // Pauses adaptatives
+        for (const pause of pausesRestantes) {
+          if (pause.insere) continue;
+          if (i > 0 && curseur >= pause.cible) { curseur += pause.duree; pause.insere = true; continue; }
+          if (curseur < pause.cible && (curseur + c.duree) > pause.cible) { curseur += pause.duree; pause.insere = true; continue; }
+        }
         c.heureDebut = m2h(curseur);
         c.heureFin   = m2h(curseur + c.duree);
         c.ordre      = i + 1;
@@ -544,13 +535,11 @@ const Affectation = {
   },
 };
 
-// ── Branchement bouton principal + gestion fuzzy binômes ──
-
-// Confirmations en attente (Map<eleveId, partenaireId|null>)
+// ── Confirmations en attente ──────────────────────────────────────────────────
 let _confirmationsBinomes = new Map();
 
-function _lancerAvecConfirmations() {
-  const res = Affectation.lancer(_confirmationsBinomes);
+function _lancerAvecConfirmations(nonAffectesUniquement = false) {
+  const res = Affectation.lancer(_confirmationsBinomes, nonAffectesUniquement);
   _confirmationsBinomes = new Map();
 
   if (res.confirmationsRequises && res.confirmationsRequises.length > 0) {
@@ -569,12 +558,8 @@ function _lancerAvecConfirmations() {
   }
 }
 
-/**
- * Affiche la modal de résultat d'affectation avec :
- * - Résumé succès + stats
- * - Avertissements classés et actionnables
- * - Répartition par jury
- */
+// ── Modal résultat ────────────────────────────────────────────────────────────
+
 function _afficherModalResultat(res) {
   const modal = document.getElementById('modal-resultat-affectation');
   if (!modal) { notifier(res.message, 'success', 5000); return; }
@@ -584,7 +569,6 @@ function _afficherModalResultat(res) {
   const nbJurys  = new Set(AppData.affectation.map(c => c.juryId)).size;
   const nbCren   = AppData.affectation.length;
 
-  // ── Résumé ──────────────────────────────────────────────
   const resumeEl = document.getElementById('resultat-resume');
   resumeEl.innerHTML = `
     <div class="resultat-resume resultat-resume-ok">
@@ -595,7 +579,6 @@ function _afficherModalResultat(res) {
       </div>
     </div>`;
 
-  // ── Stats ────────────────────────────────────────────────
   const statsEl = document.getElementById('resultat-stats');
   statsEl.style.display = '';
   statsEl.innerHTML = [
@@ -609,73 +592,48 @@ function _afficherModalResultat(res) {
       <div class="resultat-stat-label">${s.label}</div>
     </div>`).join('');
 
-  // ── Avertissements ───────────────────────────────────────
-  const avertEl     = document.getElementById('resultat-avertissements');
-  const avertListe  = document.getElementById('resultat-avert-liste');
+  const avertEl    = document.getElementById('resultat-avertissements');
+  const avertListe = document.getElementById('resultat-avert-liste');
   const avertsFiltres = res.avertissements.filter(a => a);
-
   if (avertsFiltres.length > 0) {
     avertEl.style.display = '';
     avertListe.innerHTML = avertsFiltres.map(a => {
-      // Classifier l'avertissement
-      const isNonAff  = a.includes('non affecté') || a.includes('Aucun jury');
-      const isBinome  = a.includes('inôme') || a.includes('approximatif');
-      const isSurcharge = a.includes('surchargé') || a.includes('capacité');
-      const icon = isNonAff ? '🔴' : isBinome ? '🟡' : isSurcharge ? '🟠' : '⚠';
-      return `
-        <div class="resultat-avert-item">
-          <span class="resultat-avert-icon">${icon}</span>
-          <span class="resultat-avert-text">${escHtml(a)}</span>
-        </div>`;
+      const isNonAff = a.includes('non affecté') || a.includes('Aucun jury');
+      const isBinome = a.includes('inôme') || a.includes('approximatif');
+      const icon = isNonAff ? '🔴' : isBinome ? '🟡' : '⚠';
+      return `<div class="resultat-avert-item"><span class="resultat-avert-icon">${icon}</span><span class="resultat-avert-text">${escHtml(a)}</span></div>`;
     }).join('');
-  } else {
-    avertEl.style.display = 'none';
-  }
+  } else { avertEl.style.display = 'none'; }
 
-  // ── Répartition par jury ─────────────────────────────────
-  const repartEl = document.getElementById('resultat-repartition');
+  const repartEl   = document.getElementById('resultat-repartition');
   const repartCont = document.getElementById('resultat-repartition-contenu');
   repartEl.style.display = '';
-
   const parJury = new Map();
-  AppData.jurys.forEach(j => parJury.set(j.id, { jury:j, nb:0, langues: new Set() }));
+  AppData.jurys.forEach(j => parJury.set(j.id, { jury:j, nb:0, langues:new Set() }));
   AppData.affectation.forEach(c => {
-    const p = parJury.get(c.juryId);
-    if (!p) return;
+    const p = parJury.get(c.juryId); if (!p) return;
     p.nb += c.eleveIds.length;
-    c.eleveIds.forEach(id => {
-      const e = AppData.getEleve(id);
-      if (e && e.langue) p.langues.add(e.langue);
-    });
+    c.eleveIds.forEach(id => { const e=AppData.getEleve(id); if(e&&e.langue) p.langues.add(e.langue); });
   });
-
   repartCont.innerHTML = `
     <div class="repartition-grille">
-      ${[...parJury.values()].filter(p => p.nb > 0).map(p => {
+      ${[...parJury.values()].filter(p=>p.nb>0).map(p => {
         const pct = Math.round(p.nb / p.jury.capacite * 100);
         const cls = pct > 100 ? 'repartition-item-over' : pct > 90 ? 'repartition-item-high' : '';
         const langues = [...p.langues].join(', ') || 'sans langue';
-        return `
-          <div class="repartition-item ${cls}">
-            <div class="repartition-jury-nom">${escHtml(p.jury.nom)}</div>
-            <div class="repartition-jury-meta">Salle ${escHtml(p.jury.salle)} · ${escHtml(langues)}</div>
-            <div class="repartition-barre-wrap">
-              <div class="repartition-barre" style="width:${Math.min(pct,100)}%"></div>
-            </div>
-            <div class="repartition-chiffres">
-              <strong>${p.nb}</strong> / ${p.jury.capacite} élève${p.nb > 1 ? 's' : ''}
-              <span class="repartition-pct">${pct}%</span>
-            </div>
-          </div>`;
+        return `<div class="repartition-item ${cls}">
+          <div class="repartition-jury-nom">${escHtml(p.jury.nom)}</div>
+          <div class="repartition-jury-meta">Salle ${escHtml(p.jury.salle)} · ${escHtml(langues)}</div>
+          <div class="repartition-barre-wrap"><div class="repartition-barre" style="width:${Math.min(pct,100)}%"></div></div>
+          <div class="repartition-chiffres"><strong>${p.nb}</strong> / ${p.jury.capacite} élève${p.nb>1?'s':''}<span class="repartition-pct">${pct}%</span></div>
+        </div>`;
       }).join('')}
     </div>`;
 
-  // Bouton "Voir l'affectation"
   const btnVoir = document.getElementById('btn-resultat-voir-affectation');
   if (btnVoir) {
     btnVoir.onclick = () => {
       if (typeof fermerModal === 'function') fermerModal('modal-resultat-affectation');
-      // Naviguer vers l'onglet Affectation
       document.querySelector('[data-tab="affectation"]')?.click();
     };
   }
@@ -683,23 +641,20 @@ function _afficherModalResultat(res) {
   if (typeof ouvrirModal === 'function') ouvrirModal('modal-resultat-affectation');
 }
 
+// ── Modal binômes flous ───────────────────────────────────────────────────────
+
 function _afficherModalBinomesFlous(confirmations) {
   const liste = document.getElementById('binomes-flous-liste');
   if (!liste) return;
 
-  // Construire les cartes de confirmation
   liste.innerHTML = confirmations.map((c, i) => `
     <div class="binome-flou-card" id="bfc-${i}" data-idx="${i}"
          data-eleve-id="${c.eleveId}" data-suggere-id="${c.suggeréId}">
-      <div class="bfc-header">
-        <span class="bfc-badge">${c.scorePct}% de similarité</span>
-      </div>
+      <div class="bfc-header"><span class="bfc-badge">${c.scorePct}% de similarité</span></div>
       <div class="bfc-body">
         <div class="bfc-eleve">
           <span class="bfc-label">Élève</span>
-          <strong>${escHtml(c.eleveNom)}</strong>
-          a saisi comme binôme :
-          <em>"${escHtml(c.binomeSaisi)}"</em>
+          <strong>${escHtml(c.eleveNom)}</strong> a saisi comme binôme : <em>"${escHtml(c.binomeSaisi)}"</em>
         </div>
         <div class="bfc-suggestion">
           <span class="bfc-label">Correspondance trouvée</span>
@@ -707,53 +662,39 @@ function _afficherModalBinomesFlous(confirmations) {
         </div>
       </div>
       <div class="bfc-actions">
-        <button class="btn btn-outline bfc-btn-rejeter" data-idx="${i}" title="Passer en solo">
-          ✕ Passer en solo
-        </button>
-        <button class="btn btn-primary bfc-btn-confirmer" data-idx="${i}" title="Confirmer le binôme">
-          ✓ Confirmer le binôme
-        </button>
+        <button class="btn btn-outline bfc-btn-rejeter"  data-idx="${i}">✕ Passer en solo</button>
+        <button class="btn btn-primary bfc-btn-confirmer" data-idx="${i}">✓ Confirmer le binôme</button>
       </div>
-    </div>
-  `).join('');
+    </div>`).join('');
 
-  // Stocker les confirmations en cours
-  // Par défaut : tous non décidés (classe neutre)
-  window._binoFlousData = confirmations;
-  window._binoDecisions = confirmations.map(() => null); // null = pas encore décidé
+  window._binoFlousData  = confirmations;
+  window._binoDecisions  = confirmations.map(() => null);
 
-  // Branchement boutons de chaque carte
   liste.querySelectorAll('.bfc-btn-confirmer').forEach(btn => {
     btn.addEventListener('click', () => {
-      const idx     = parseInt(btn.dataset.idx);
-      const card    = document.getElementById(`bfc-${idx}`);
-      const eleveId = parseInt(card.dataset.eleveId);
-      const suggId  = parseInt(card.dataset.suggereId);
-      window._binoDecisions[idx] = { eleveId, partenaireId: suggId };
+      const idx = parseInt(btn.dataset.idx);
+      const card = document.getElementById(`bfc-${idx}`);
+      window._binoDecisions[idx] = { eleveId:parseInt(card.dataset.eleveId), partenaireId:parseInt(card.dataset.suggereId) };
       card.classList.add('bfc-confirmed'); card.classList.remove('bfc-rejected');
-      btn.disabled = true;
-      card.querySelector('.bfc-btn-rejeter').disabled = true;
+      btn.disabled = true; card.querySelector('.bfc-btn-rejeter').disabled = true;
     });
   });
 
   liste.querySelectorAll('.bfc-btn-rejeter').forEach(btn => {
     btn.addEventListener('click', () => {
-      const idx     = parseInt(btn.dataset.idx);
-      const card    = document.getElementById(`bfc-${idx}`);
-      const eleveId = parseInt(card.dataset.eleveId);
-      window._binoDecisions[idx] = { eleveId, partenaireId: null };
+      const idx = parseInt(btn.dataset.idx);
+      const card = document.getElementById(`bfc-${idx}`);
+      window._binoDecisions[idx] = { eleveId:parseInt(card.dataset.eleveId), partenaireId:null };
       card.classList.add('bfc-rejected'); card.classList.remove('bfc-confirmed');
-      btn.disabled = true;
-      card.querySelector('.bfc-btn-confirmer').disabled = true;
+      btn.disabled = true; card.querySelector('.bfc-btn-confirmer').disabled = true;
     });
   });
 
-  // Bouton "Tout rejeter"
   const btnToutRejeter = document.getElementById('btn-binomes-tout-rejeter');
   if (btnToutRejeter) {
     btnToutRejeter.onclick = () => {
       confirmations.forEach((c, i) => {
-        window._binoDecisions[i] = { eleveId: c.eleveId, partenaireId: null };
+        window._binoDecisions[i] = { eleveId:c.eleveId, partenaireId:null };
         const card = document.getElementById(`bfc-${i}`);
         if (card) { card.classList.add('bfc-rejected'); card.classList.remove('bfc-confirmed'); }
         liste.querySelectorAll('.bfc-btn-confirmer, .bfc-btn-rejeter').forEach(b => b.disabled = true);
@@ -761,39 +702,37 @@ function _afficherModalBinomesFlous(confirmations) {
     };
   }
 
-  // Bouton "Valider et affecter"
   const btnValider = document.getElementById('btn-binomes-valider');
   if (btnValider) {
     btnValider.onclick = () => {
-      // Vérifier que toutes les décisions sont prises
       const nonDecides = window._binoDecisions.filter(d => d === null);
-      if (nonDecides.length > 0) {
-        notifier(`Veuillez confirmer ou rejeter les ${nonDecides.length} binôme(s) restant(s).`, 'warning', 4000);
-        return;
-      }
-      // Construire la Map de confirmations
+      if (nonDecides.length > 0) { notifier(`Veuillez traiter les ${nonDecides.length} binôme(s) restant(s).`, 'warning', 4000); return; }
       _confirmationsBinomes = new Map();
-      window._binoDecisions.forEach(d => {
-        if (d) _confirmationsBinomes.set(d.eleveId, d.partenaireId);
-      });
-      // Fermer la modal et relancer
+      window._binoDecisions.forEach(d => { if (d) _confirmationsBinomes.set(d.eleveId, d.partenaireId); });
       if (typeof fermerModal === 'function') fermerModal('modal-binomes-flous');
       _lancerAvecConfirmations();
     };
   }
 
-  // Ouvrir la modal
   if (typeof ouvrirModal === 'function') ouvrirModal('modal-binomes-flous');
 }
 
-// Petite fonction escHtml locale pour affectation.js
+// Helper escHtml local
 function escHtml(str) {
   return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('btn-lancer-affectation');
-  if (btn) btn.addEventListener('click', _lancerAvecConfirmations);
+  if (btn) btn.addEventListener('click', () => _lancerAvecConfirmations(false));
+
+  // Bouton "Affecter les non-affectés" (ajouté dynamiquement par ui.js)
+  document.addEventListener('click', e => {
+    if (e.target.closest('#btn-affecter-non-affectes')) {
+      _lancerAvecConfirmations(true);
+    }
+  });
 });
 
 window.Affectation = Affectation;
+window._lancerAvecConfirmations = _lancerAvecConfirmations;

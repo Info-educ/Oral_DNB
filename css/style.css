@@ -914,3 +914,118 @@ dialog.modal::backdrop { display: none; }
   .resultat-stats-grid { grid-template-columns: repeat(2,1fr); }
   .repartition-grille  { grid-template-columns: 1fr; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   NOUVEAUTÉS REV.4 — Drag & Drop + Non-affectés + Fin jury
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Colonne poignée drag ─────────────────────────────────── */
+.th-drag { width: 24px; color: var(--gray-300); font-size: .9rem; text-align: center; padding: .5rem .25rem !important; }
+.td-drag {
+  width: 24px;
+  color: var(--gray-300);
+  font-size: 1.1rem;
+  text-align: center;
+  cursor: grab;
+  padding: .5rem .25rem !important;
+  user-select: none;
+  transition: color var(--transition);
+}
+.td-drag:hover { color: var(--blue-500); }
+
+/* ── Ligne en cours de glisser ────────────────────────────── */
+.dnd-row { transition: background var(--transition), opacity var(--transition); }
+.dnd-row.dnd-dragging  { opacity: .5; background: var(--blue-50); }
+.dnd-row.dnd-source-hidden { visibility: hidden; }
+
+/* ── Indicateur d'insertion ───────────────────────────────── */
+.dnd-insert-indicator td { padding: 0 !important; border: none !important; }
+.dnd-insert-line {
+  height: 3px;
+  background: var(--blue-500);
+  border-radius: 2px;
+  margin: 0 .5rem;
+  animation: dndPulse .6s ease infinite alternate;
+}
+@keyframes dndPulse {
+  from { opacity: .7; }
+  to   { opacity: 1; box-shadow: 0 0 6px var(--blue-400); }
+}
+
+/* ── Jury-card survolée pendant le drag ───────────────────── */
+.jury-card.dnd-over {
+  outline: 2.5px solid var(--blue-500);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(59,130,246,.12), var(--shadow-md);
+}
+
+/* ── Zone de dépôt invisible sur la carte ─────────────────── */
+.dnd-drop-zone {
+  height: 4px;
+  background: transparent;
+  transition: background .15s, height .15s;
+}
+.jury-card.dnd-over .dnd-drop-zone {
+  height: 8px;
+  background: linear-gradient(90deg, transparent, var(--blue-200), transparent);
+}
+
+/* ── Heure de fin estimée dans l'en-tête de jury ─────────── */
+.jury-card-fin {
+  font-size: .72rem;
+  color: rgba(255,255,255,.75);
+  background: rgba(255,255,255,.1);
+  padding: .15rem .5rem;
+  border-radius: 99px;
+}
+
+/* ── Panneau élèves non affectés ──────────────────────────── */
+.non-affectes-panel {
+  background: #fffbeb;
+  border: 1.5px solid #f59e0b;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm);
+}
+.non-affectes-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .875rem 1.25rem;
+  background: #fef3c7;
+  border-bottom: 1px solid #f59e0b;
+  flex-wrap: wrap;
+}
+.non-affectes-icon { font-size: 1.5rem; flex-shrink: 0; }
+.non-affectes-header > div { flex: 1; min-width: 0; }
+.non-affectes-header strong { display: block; color: #92400e; font-size: .95rem; }
+.non-affectes-sub { font-size: .78rem; color: #b45309; }
+.non-affectes-table-wrap { overflow-x: auto; max-height: 220px; overflow-y: auto; }
+.non-affectes-table { width: 100%; }
+.non-affectes-table thead { background: #fde68a; position: sticky; top: 0; }
+
+/* ── Bouton accent (pour "Affecter les non-affectés") ──────── */
+.btn-accent {
+  background: #d97706;
+  color: #fff;
+  border: none;
+  padding: .5rem 1.1rem;
+  border-radius: var(--radius);
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), transform var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-accent:hover { background: #b45309; transform: translateY(-1px); }
+.btn-accent:active { transform: none; }
+
+/* ── Mention "fin estimée" dans les stats ─────────────────── */
+.stat-fin { font-size: .82rem; font-weight: 600; color: var(--gray-500); background: var(--gray-100); padding: .25rem .75rem; border-radius: 99px; border: 1px solid var(--gray-200); }
+
+@media (max-width: 600px) {
+  .non-affectes-header { flex-direction: column; align-items: flex-start; }
+  .btn-accent { width: 100%; text-align: center; }
+}

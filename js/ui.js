@@ -1,12 +1,15 @@
 /**
  * ui.js — Contrôleur interface utilisateur
- * Oral DNB · Collège Joliot Curie  —  Rev.2
+ * Oral DNB · Collège Joliot Curie  —  Rev.3
  *
- * Nouveautés :
- *   - Champ "langue" (texte libre) remplace LVA/LVB partout
- *   - Champ "sujet" et "parcours" dans le formulaire élève
- *   - Calculateur de jurys : panneau dédié dans l'onglet Affectation
- *   - Paramètres enrichis : heureDebut, heureFin, margePassage
+ * Nouveautés Rev.3 :
+ *   - Drag & Drop dans le tableau d'affectation :
+ *       glisser une ligne de créneau et la déposer sur une autre
+ *       carte de jury pour déplacer le créneau.
+ *   - Bouton "Affecter les non-affectés" :
+ *       visible quand des élèves restent sans créneau après affectation ;
+ *       les place même si ça dépasse l'heure de fin de session.
+ *   - Zone de dépôt visuelle sur chaque jury-card pendant le glisser.
  */
 
 'use strict';
@@ -40,8 +43,6 @@ window.fermerModal  = fermerModal;
 
 const Unsaved = {
   _modified: false,
-
-  /** Marque la session comme modifiée (appeler après tout changement de données) */
   marquer() {
     if (this._modified) return;
     this._modified = true;
@@ -52,8 +53,6 @@ const Unsaved = {
     if (ban) ban.classList.add('visible');
     if (btn) btn.classList.add('sidebar-btn-unsaved');
   },
-
-  /** Marque la session comme sauvegardée */
   sauvegarder() {
     this._modified = false;
     const ind = document.getElementById('save-indicator');
@@ -63,11 +62,8 @@ const Unsaved = {
     if (ban) ban.classList.remove('visible');
     if (btn) btn.classList.remove('sidebar-btn-unsaved');
   },
-
-  /** Vrai si des modifications non sauvegardées existent */
   get estModifie() { return this._modified; },
 };
-
 window.Unsaved = Unsaved;
 
 function escHtml(str) {
@@ -99,7 +95,6 @@ function effacerErreurs(regles) {
 // ════════════════════════════════════════════════════════════════
 
 function initNav() {
-  // Supporte les classes nav-tab (ancien header) et nav-item (sidebar)
   $$('.nav-tab, .nav-item').forEach(tab => {
     tab.addEventListener('click', () => {
       $$('.nav-tab, .nav-item').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected','false'); });
@@ -180,10 +175,10 @@ function renderEleves() {
 
   const filtres = AppData.eleves.filter(e => {
     const txt = `${e.nom} ${e.prenom} ${e.classe} ${e.sujet}`.toLowerCase();
-    if (search && !txt.includes(search))                     return false;
-    if (fLang  && (e.langue||'').toLowerCase() !== fLang)   return false;
-    if (fAm    && !e.amenagement)                            return false;
-    if (fBin   && !e.binomeAvec)                             return false;
+    if (search && !txt.includes(search))                    return false;
+    if (fLang  && (e.langue||'').toLowerCase() !== fLang)  return false;
+    if (fAm    && !e.amenagement)                           return false;
+    if (fBin   && !e.binomeAvec)                            return false;
     return true;
   });
 
@@ -208,7 +203,6 @@ function renderEleves() {
     if (e.amenagement) flags.push('<span class="badge badge-amem">1/3 tps</span>');
     if (e.prioritaire)  flags.push('<span class="badge badge-prio">Prior.</span>');
     if (e.binomeAvec)   flags.push('<span class="badge badge-duo">Binôme</span>');
-
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${String(i+1).padStart(2,'0')}</td>
@@ -228,7 +222,28 @@ function renderEleves() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// RENDU — AFFECTATION
+// DRAG & DROP — État global
+// ════════════════════════════════════════════════════════════════
+
+const DnD = {
+  // Index du créneau en cours de glisser (dans AppData.affectation)
+  creneauIdx   : null,
+  // Jury source
+  juryIdSource : null,
+  // Élément <tr> fantôme
+  ghost        : null,
+
+  reset() {
+    this.creneauIdx   = null;
+    this.juryIdSource = null;
+    $$('.jury-card').forEach(c => c.classList.remove('dnd-over', 'dnd-target'));
+    $$('.affec-table tbody tr').forEach(r => r.classList.remove('dnd-dragging'));
+    $$('.dnd-drop-line').forEach(l => l.remove());
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+// RENDU — AFFECTATION (avec Drag & Drop)
 // ════════════════════════════════════════════════════════════════
 
 const UI = {
@@ -236,18 +251,28 @@ const UI = {
   renderAffectation() {
     this._renderCalculateur();
     this._renderResultat();
+    this._updateBandeauParams();
+  },
+
+  _updateBandeauParams() {
+    const p = AppData.params;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('pb-debut',  p.heureDebut);
+    set('pb-fin',    p.heureFin);
+    set('pb-solo',   p.dureeSolo);
+    set('pb-binome', p.dureeBinome);
+    set('pb-marge',  p.margePassage);
+    set('pb-convoc', p.convocAvant);
+    const pausesActives = (p.pauses||[]).filter(pa => pa.active && pa.duree > 0);
+    set('pb-pauses', pausesActives.length > 0
+      ? pausesActives.map(pa => `${pa.heure} (${pa.duree} min)`).join(', ')
+      : 'Aucune');
   },
 
   _renderCalculateur() {
-    const zone = $('#calculateur-result');
-    if (!zone) return;
-
+    const zone = $('#calculateur-result'); if (!zone) return;
     const calcul = AppData.calculerNbJurys();
-    if (!calcul.ok) {
-      zone.innerHTML = `<div class="calc-error">⚠ ${escHtml(calcul.erreur)}</div>`;
-      return;
-    }
-
+    if (!calcul.ok) { zone.innerHTML = `<div class="calc-error">⚠ ${escHtml(calcul.erreur)}</div>`; return; }
     zone.innerHTML = `
       <div class="calc-result-grid">
         <div class="calc-card calc-card-primary">
@@ -268,60 +293,95 @@ const UI = {
         </div>
       </div>
       <div class="calc-detail">
-        <strong>Détail du calcul :</strong>
-        ${calcul.minutesUtiles} min utiles
-        (session ${calcul.dureeSession} min − pauses ${(AppData.params.pauses||[]).filter(p=>p.active&&p.duree>0).reduce((s,p)=>s+p.duree,0)} min)
-        · ${calcul.nbEleves} élèves
-        dont <strong>${calcul.nbBinomiques} en binôme</strong> (${calcul.nbBinomePaires} paires),
+        <strong>Détail :</strong> ${calcul.minutesUtiles} min utiles
+        · ${calcul.nbEleves} élèves dont <strong>${calcul.nbBinomiques} en binôme</strong>,
         <strong>${calcul.nbAmenagement} aménagements</strong>,
         <strong>${calcul.nbPrioritaires} prioritaires</strong>.
-        Durée moyenne estimée par élève : <strong>${calcul.dureeMoyParEleve} min</strong>.
-        ${calcul.marge > 0 ? `Marge entre passages : ${calcul.marge} min.` : ''}
-        <br/>Fin estimée avec ${calcul.nbJurysMin} jurys : <strong>${calcul.heureFinEstimeeMin}</strong>.
-        ${AppData.nbJurys() > 0
-          ? `<br/>⚠ Vous avez actuellement <strong>${AppData.nbJurys()} jury(s) chargé(s)</strong> — le calcul s'applique à l'affectation, pas à la liste.`
-          : ''}
-      </div>
-    `;
+        Durée moy. : <strong>${calcul.dureeMoyParEleve} min/élève</strong>.
+        Fin estimée : <strong>${calcul.heureFinEstimeeMin}</strong>.
+        ${AppData.nbJurys() > 0 ? `<br/>⚠ ${AppData.nbJurys()} jury(s) chargé(s) actuellement.` : ''}
+      </div>`;
   },
 
   _renderResultat() {
-    const container = $('#affectation-result');
-    if (!container) return;
+    const container = $('#affectation-result'); if (!container) return;
 
     if (AppData.affectation.length === 0) {
       container.innerHTML = `<div class="placeholder-zone"><p>Cliquez sur <strong>⚡ Lancer l'affectation</strong> après avoir chargé les données.</p></div>`;
-      this._updateStats();
-      return;
+      this._updateStats(); return;
     }
 
+    // ── Panneau non-affectés ─────────────────────────────────────────
+    const dejaDansCreneaux = new Set(AppData.affectation.flatMap(c => c.eleveIds));
+    const nonAffectes = AppData.eleves.filter(e => !dejaDansCreneaux.has(e.id));
+
+    let htmlNonAff = '';
+    if (nonAffectes.length > 0) {
+      const lignes = nonAffectes.map(e => {
+        const flags = [];
+        if (e.amenagement) flags.push('<span class="badge badge-amem">1/3 tps</span>');
+        if (e.prioritaire)  flags.push('<span class="badge badge-prio">Prior.</span>');
+        if (e.binomeAvec)   flags.push('<span class="badge badge-duo">Binôme</span>');
+        return `<tr>
+          <td><strong>${escHtml(e.nom)}</strong> ${escHtml(e.prenom)}</td>
+          <td>${escHtml(e.classe)}</td>
+          <td>${e.langue ? `<span class="badge badge-langue">${escHtml(e.langue)}</span>` : '—'}</td>
+          <td>${flags.join(' ')}</td>
+        </tr>`;
+      }).join('');
+      htmlNonAff = `
+        <div class="non-affectes-panel">
+          <div class="non-affectes-header">
+            <span class="non-affectes-icon">⚠</span>
+            <div>
+              <strong>${nonAffectes.length} élève${nonAffectes.length>1?'s':''} non affecté${nonAffectes.length>1?'s':''}</strong>
+              <span class="non-affectes-sub">La capacité des jurys a été dépassée ou la langue ne correspondait pas.</span>
+            </div>
+            <button class="btn btn-accent" id="btn-affecter-non-affectes" title="Affecter même au-delà de l'heure prévue">
+              ⚡ Affecter les non-affectés
+            </button>
+          </div>
+          <div class="non-affectes-table-wrap">
+            <table class="affec-table non-affectes-table">
+              <thead><tr><th>Élève</th><th>Classe</th><th>Langue</th><th>Particularités</th></tr></thead>
+              <tbody>${lignes}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+
+    // ── Grille des jurys ─────────────────────────────────────────────
     const parJury = new Map();
     AppData.jurys.forEach(j => parJury.set(j.id, { jury:j, creneaux:[] }));
     AppData.affectation.forEach((c,idx) => {
       if (parJury.has(c.juryId)) parJury.get(c.juryId).creneaux.push({...c, _idx:idx});
     });
 
-    let html = '<div class="affectation-grid">';
+    let htmlGrid = '<div class="affectation-grid">';
 
     parJury.forEach(({ jury, creneaux }) => {
       if (!creneaux.length) return;
       const nbE = creneaux.reduce((s,c)=>s+c.eleveIds.length,0);
       const langBadge = jury.langue ? `<span class="badge badge-langue">${escHtml(jury.langue)}</span>` : '';
+      const heureFin  = creneaux.reduce((m,c) => c.heureFin > m ? c.heureFin : m, '');
 
-      html += `<div class="jury-card" data-jury-id="${jury.id}">
-        <div class="jury-card-header">
-          <div class="jury-card-title">
-            <strong>${escHtml(jury.nom)}</strong>
-            <span class="jury-card-salle">Salle ${escHtml(jury.salle)}</span>
+      htmlGrid += `
+        <div class="jury-card" data-jury-id="${jury.id}">
+          <div class="jury-card-header">
+            <div class="jury-card-title">
+              <strong>${escHtml(jury.nom)}</strong>
+              <span class="jury-card-salle">Salle ${escHtml(jury.salle)}</span>
+            </div>
+            <div class="jury-card-meta">
+              ${langBadge}
+              <span class="jury-card-count">${nbE} élève${nbE>1?'s':''}</span>
+              ${heureFin ? `<span class="jury-card-fin">Fin estimée&nbsp;: <strong>${heureFin}</strong></span>` : ''}
+            </div>
           </div>
-          <div class="jury-card-meta">
-            ${langBadge}
-            <span class="jury-card-count">${nbE} élève${nbE>1?'s':''}</span>
-          </div>
-        </div>
-        <table class="affec-table"><thead>
-          <tr><th>#</th><th>Début</th><th>Fin</th><th>Candidat(s)</th><th>Cl.</th><th>Durée</th><th></th></tr>
-        </thead><tbody>`;
+          <div class="dnd-drop-zone" data-jury-id="${jury.id}" title="Déposer ici pour placer à la fin"></div>
+          <table class="affec-table"><thead>
+            <tr><th class="th-drag" title="Glisser pour déplacer">⠿</th><th>#</th><th>Début</th><th>Fin</th><th>Candidat(s)</th><th>Cl.</th><th>Durée</th><th></th></tr>
+          </thead><tbody>`;
 
       creneaux.sort((a,b)=>a.ordre-b.ordre).forEach(c => {
         const nomsHtml = c.eleveIds.map(id => {
@@ -334,23 +394,30 @@ const UI = {
         const classes = c.eleveIds.map(id=>AppData.getEleve(id)?.classe||'').filter(Boolean).join('/');
         const flagBin = c.isBinome ? '<span class="badge badge-duo">Binôme</span>' : '';
 
-        html += `<tr data-creneau-idx="${c._idx}">
-          <td class="text-center"><span class="ordre-badge">${c.ordre}</span></td>
-          <td>${c.heureDebut}</td><td>${c.heureFin}</td>
-          <td>${nomsHtml}</td><td>${escHtml(classes)}</td>
-          <td>${c.duree} min ${flagBin}</td>
-          <td class="col-actions">
-            <button class="btn btn-icon btn-edit" data-action="deplacer-creneau" data-idx="${c._idx}" title="Déplacer">⇄</button>
-            <button class="btn btn-icon btn-del"  data-action="del-creneau"      data-idx="${c._idx}" title="Supprimer">🗑</button>
-          </td></tr>`;
+        htmlGrid += `
+          <tr class="dnd-row" draggable="true" data-creneau-idx="${c._idx}" data-jury-id="${jury.id}">
+            <td class="td-drag" title="Glisser pour déplacer">⠿</td>
+            <td class="text-center"><span class="ordre-badge">${c.ordre}</span></td>
+            <td>${c.heureDebut}</td><td>${c.heureFin}</td>
+            <td>${nomsHtml}</td><td>${escHtml(classes)}</td>
+            <td>${c.duree} min ${flagBin}</td>
+            <td class="col-actions">
+              <button class="btn btn-icon btn-edit" data-action="deplacer-creneau" data-idx="${c._idx}" title="Déplacer (modal)">⇄</button>
+              <button class="btn btn-icon btn-del"  data-action="del-creneau"      data-idx="${c._idx}" title="Supprimer">🗑</button>
+            </td>
+          </tr>`;
       });
 
-      html += `</tbody></table></div>`;
+      htmlGrid += `</tbody></table></div>`;
     });
 
-    html += '</div>';
-    container.innerHTML = html;
+    htmlGrid += '</div>';
+
+    container.innerHTML = htmlNonAff + htmlGrid;
     this._updateStats();
+
+    // Brancher le drag & drop APRÈS insertion dans le DOM
+    this._initDragDrop();
   },
 
   _updateStats() {
@@ -364,11 +431,119 @@ const UI = {
       <span class="stat-item">${AppData.affectation.length} créneau${AppData.affectation.length>1?'x':''}</span>
       <span class="stat-item">${AppData.nbJurys()} jury${AppData.nbJurys()>1?'s':''}</span>`;
   },
+
+  // ── Drag & Drop ──────────────────────────────────────────────────────────────
+
+  _initDragDrop() {
+    const container = $('#affectation-result'); if (!container) return;
+
+    // ── Début du glisser ──────────────────────────────────────
+    container.addEventListener('dragstart', e => {
+      const row = e.target.closest('.dnd-row');
+      if (!row) return;
+      const idx = parseInt(row.dataset.creneauIdx, 10);
+      if (isNaN(idx)) return;
+
+      DnD.creneauIdx   = idx;
+      DnD.juryIdSource = parseInt(row.dataset.juryId, 10);
+
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(idx));
+
+      row.classList.add('dnd-dragging');
+
+      // Petit délai pour que le fantôme de drag s'affiche avant qu'on masque la ligne
+      setTimeout(() => row.classList.add('dnd-source-hidden'), 0);
+    });
+
+    // ── Survol d'une zone de dépôt ────────────────────────────
+    container.addEventListener('dragover', e => {
+      const juryCard = e.target.closest('.jury-card');
+      if (!juryCard || DnD.creneauIdx === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      // Mettre en évidence la carte survolée
+      $$('.jury-card').forEach(c => c.classList.remove('dnd-over'));
+      juryCard.classList.add('dnd-over');
+
+      // Indicateur de position d'insertion entre les lignes
+      $$('.dnd-insert-indicator').forEach(el => el.remove());
+      const targetRow = e.target.closest('.dnd-row');
+      if (targetRow && targetRow !== document.querySelector(`.dnd-row[data-creneau-idx="${DnD.creneauIdx}"]`)) {
+        const indicator = document.createElement('tr');
+        indicator.className = 'dnd-insert-indicator';
+        indicator.innerHTML = '<td colspan="8"><div class="dnd-insert-line"></div></td>';
+        const rect = targetRow.getBoundingClientRect();
+        const mid  = rect.top + rect.height / 2;
+        if (e.clientY < mid) {
+          targetRow.parentNode.insertBefore(indicator, targetRow);
+        } else {
+          targetRow.parentNode.insertBefore(indicator, targetRow.nextSibling);
+        }
+      }
+    });
+
+    // ── Entrée dans une carte ──────────────────────────────────
+    container.addEventListener('dragenter', e => {
+      const juryCard = e.target.closest('.jury-card');
+      if (juryCard) juryCard.classList.add('dnd-over');
+    });
+
+    // ── Sortie d'une carte ─────────────────────────────────────
+    container.addEventListener('dragleave', e => {
+      const juryCard = e.target.closest('.jury-card');
+      if (!juryCard) return;
+      const related = e.relatedTarget;
+      if (!related || !juryCard.contains(related)) {
+        juryCard.classList.remove('dnd-over');
+        $$('.dnd-insert-indicator').forEach(el => el.remove());
+      }
+    });
+
+    // ── Dépôt ─────────────────────────────────────────────────
+    container.addEventListener('drop', e => {
+      e.preventDefault();
+      const juryCard = e.target.closest('.jury-card');
+      if (!juryCard || DnD.creneauIdx === null) { DnD.reset(); return; }
+
+      const juryIdCible = parseInt(juryCard.dataset.juryId, 10);
+
+      // Trouver l'index d'insertion (avant quelle ligne ?)
+      const indicator = juryCard.querySelector('.dnd-insert-indicator');
+      let avantCreneauIdx = null;
+      if (indicator) {
+        const rowApres = indicator.nextElementSibling;
+        if (rowApres && rowApres.classList.contains('dnd-row')) {
+          avantCreneauIdx = parseInt(rowApres.dataset.creneauIdx, 10);
+        }
+      }
+
+      const err = Affectation.deplacerCreneauDnD(DnD.creneauIdx, juryIdCible, avantCreneauIdx);
+      DnD.reset();
+
+      if (err) {
+        notifier(err, 'error', 5000);
+      } else {
+        UI.renderAffectation();
+        Unsaved.marquer();
+        notifier('Créneau déplacé.', 'success', 2500);
+      }
+    });
+
+    // ── Fin du glisser (annulation, ex. Escape) ───────────────
+    container.addEventListener('dragend', e => {
+      $$('.dnd-row').forEach(r => r.classList.remove('dnd-dragging', 'dnd-source-hidden'));
+      $$('.dnd-insert-indicator').forEach(el => el.remove());
+      $$('.jury-card').forEach(c => c.classList.remove('dnd-over'));
+      // Si drop n'a pas eu lieu, pas besoin de faire autre chose (DnD.reset() est appelé dans drop)
+    });
+  },
 };
 window.UI = UI;
 
 // ════════════════════════════════════════════════════════════════
-// MODAL DÉPLACEMENT
+// MODAL DÉPLACEMENT (conservé pour le bouton ⇄ classique)
 // ════════════════════════════════════════════════════════════════
 
 function initModalDeplacement() {
@@ -378,8 +553,7 @@ function initModalDeplacement() {
     const idx     = parseInt(btn.dataset.idx, 10);
     const creneau = AppData.affectation[idx];
     if (!creneau) return;
-    const select = $('#deplacement-jury-cible');
-    if (!select) return;
+    const select = $('#deplacement-jury-cible'); if (!select) return;
     select.innerHTML = AppData.jurys.filter(j=>j.id!==creneau.juryId)
       .map(j=>`<option value="${j.id}">${escHtml(j.nom)} — Salle ${escHtml(j.salle)} (${j.langue||'Toutes'})</option>`).join('');
     $('#deplacement-creneau-idx').value = idx;
@@ -434,8 +608,7 @@ function initFormJury() {
     const idRaw = $('#jury-id').value;
     if (idRaw) { AppData.updateJury(parseInt(idRaw,10),fields); notifier('Jury mis à jour.'); }
     else       { AppData.addJury(fields);                       notifier('Jury ajouté.'); }
-    Unsaved.marquer();
-    fermerModal('modal-jury'); renderJurys();
+    Unsaved.marquer(); fermerModal('modal-jury'); renderJurys();
   });
 }
 
@@ -481,13 +654,12 @@ function initFormEleve() {
     const idRaw = $('#eleve-id').value;
     if (idRaw) { AppData.updateEleve(parseInt(idRaw,10),fields); notifier('Élève mis à jour.'); }
     else       { AppData.addEleve(fields);                       notifier('Élève ajouté.'); }
-    Unsaved.marquer();
-    fermerModal('modal-eleve'); renderEleves();
+    Unsaved.marquer(); fermerModal('modal-eleve'); renderEleves();
   });
 }
 
 // ════════════════════════════════════════════════════════════════
-// FILTRES ÉLÈVES — peuple la liste de langues dynamiquement
+// FILTRES ÉLÈVES
 // ════════════════════════════════════════════════════════════════
 
 function initFiltresEleves() {
@@ -517,17 +689,15 @@ function chargerParams() {
   $('#param-duree-binome').value  = p.dureeBinome;
   $('#param-heure-debut').value   = p.heureDebut;
   $('#param-heure-fin').value     = p.heureFin;
-  // Pauses 1, 2, 3
   const pauses = p.pauses || [{active:true,heure:'10:00',duree:15},{active:true,heure:'12:00',duree:60},{active:false,heure:'15:00',duree:15}];
   [1,2,3].forEach((n,i) => {
     const pa = pauses[i] || {active:false,heure:'12:00',duree:0};
     const cb = $(`#param-pause${n}-active`);
     const ph = $(`#param-pause${n}-heure`);
     const pd = $(`#param-pause${n}-duree`);
-    if (cb) cb.checked    = !!pa.active;
-    if (ph) ph.value      = pa.heure  || '12:00';
-    if (pd) pd.value      = pa.duree  || 0;
-    // Déclencher le toggle visuel
+    if (cb) cb.checked = !!pa.active;
+    if (ph) ph.value   = pa.heure  || '12:00';
+    if (pd) pd.value   = pa.duree  || 0;
     const fields = $(`#pause${n}-fields`);
     if (fields) {
       fields.style.opacity = pa.active ? '1' : '0.4';
@@ -539,17 +709,13 @@ function chargerParams() {
 }
 
 function initParams() {
-  // Bouton principal sidebar (conservé pour compatibilité)
   const btnParams = $('#btn-open-params');
   if (btnParams) btnParams.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
-
-  // Bouton nav-item paramètres (sidebar)
   const btnParamsNav = $('#btn-open-params-nav');
   if (btnParamsNav) btnParamsNav.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
-
-  // Bouton bandeau affectation
   const btnParamsAff = $('#btn-open-params-affectation');
   if (btnParamsAff) btnParamsAff.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
+
   $('#form-params').addEventListener('submit', e => {
     e.preventDefault();
     AppData.saveParams({
@@ -570,8 +736,8 @@ function initParams() {
     fermerModal('modal-params');
     Unsaved.marquer();
     notifier('Paramètres enregistrés.','success');
-    // Recalcule le calculateur si on est sur l'onglet affectation
     UI._renderCalculateur();
+    UI._updateBandeauParams();
   });
 }
 
@@ -647,7 +813,7 @@ function initImportExportJSON() {
       const err = AppData.importerJSON(data);
       if (err) { notifier(err,'error'); return; }
       renderJurys(); renderEleves(); peuplerFiltreLangues(); UI.renderAffectation();
-      Unsaved.sauvegarder(); // la session chargée est considérée "sauvegardée"
+      Unsaved.sauvegarder();
       notifier(`Session restaurée : ${AppData.nbJurys()} jury(s), ${AppData.nbEleves()} élève(s).`,'success');
     };
     reader.readAsText(file,'UTF-8');
