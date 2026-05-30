@@ -172,6 +172,143 @@ const Print = {
   // 1. CONVOCATIONS ÉLÈVES
   // ─────────────────────────────────────────────────────────────
 
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE SOMMAIRE — insérée en première page de chaque impression
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Génère une page de garde/sommaire commune à tous les documents imprimés.
+   * @param {string} typeDoc  — ex. "Convocations élèves"
+   * @param {number} nbPages  — nombre de pages du document (hors sommaire)
+   * @param {number} nbEleves — nombre d'élèves concernés par ce document
+   */
+  _pageSommaire(typeDoc, nbPages, nbEleves) {
+    const p   = AppData.params;
+    const cfg = PrintConfig.get();
+
+    // Date de l'épreuve formatée
+    let dateEpreuveStr = '—';
+    if (p.dateEpreuve) {
+      try {
+        const d = new Date(p.dateEpreuve + 'T12:00:00');
+        dateEpreuveStr = d.toLocaleDateString('fr-FR', {
+          weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+        });
+        dateEpreuveStr = dateEpreuveStr.charAt(0).toUpperCase() + dateEpreuveStr.slice(1);
+      } catch { dateEpreuveStr = p.dateEpreuve; }
+    }
+
+    const typeLabel = (p.typeEpreuve === 'DNB_BLANC')
+      ? 'Diplôme National du Brevet — Blanc'
+      : 'Diplôme National du Brevet';
+
+    const logoHtml = cfg.logoBase64
+      ? `<img src="${cfg.logoBase64}" class="print-logo sommaire-logo" alt="Logo établissement" />`
+      : '';
+
+    // ── Répartition par classe ──────────────────────────────────────────────
+    // On construit un Map classe → nb élèves affectés dans ce document
+    const elevesConcernes = new Set();
+    AppData.affectation.forEach(c => c.eleveIds.forEach(id => elevesConcernes.add(id)));
+
+    const parClasse = new Map();
+    AppData.eleves
+      .filter(e => elevesConcernes.has(e.id))
+      .forEach(e => {
+        const cl = (e.classe || '—').trim().toUpperCase();
+        parClasse.set(cl, (parClasse.get(cl) || 0) + 1);
+      });
+
+    // Trier les classes alphabétiquement
+    const classesTriees = [...parClasse.entries()].sort((a, b) => a[0].localeCompare(b[0], 'fr'));
+
+    const lignesClasses = classesTriees.map(([cl, nb]) => `
+      <tr>
+        <td class="som-td-classe">${this._esc(cl)}</td>
+        <td class="som-td-nb">${nb}</td>
+      </tr>`).join('');
+
+    // Élèves non affectés
+    const nbNonAff = AppData.nbEleves() - elevesConcernes.size;
+
+    // Stats globales
+    const nbJurysUtilises = new Set(AppData.affectation.map(c => c.juryId)).size;
+    const nbCreneaux      = AppData.affectation.length;
+
+    const now = new Date().toLocaleDateString('fr-FR', {
+      day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+
+    return `
+      <div class="print-page sommaire-page">
+
+        <div class="som-header">
+          ${logoHtml}
+          <div class="som-header-titre">
+            <div class="som-etab">${this._esc(p.etablissement)}</div>
+            <div class="som-annee">Année scolaire ${this._esc(p.annee)}</div>
+          </div>
+        </div>
+
+        <div class="som-titre-doc">
+          <div class="som-type-epreuve">${this._esc(typeLabel)}</div>
+          <div class="som-oral">ÉPREUVE ORALE</div>
+          ${p.dateEpreuve ? `<div class="som-date-epreuve">${this._esc(dateEpreuveStr)}</div>` : ''}
+        </div>
+
+        <div class="som-doc-label">
+          <span class="som-doc-type">${this._esc(typeDoc)}</span>
+        </div>
+
+        <div class="som-stats-grid">
+          <div class="som-stat-card som-stat-primary">
+            <div class="som-stat-val">${nbEleves}</div>
+            <div class="som-stat-label">Candidats affectés</div>
+          </div>
+          <div class="som-stat-card">
+            <div class="som-stat-val">${nbPages}</div>
+            <div class="som-stat-label">Page${nbPages > 1 ? 's' : ''} générée${nbPages > 1 ? 's' : ''}</div>
+          </div>
+          <div class="som-stat-card">
+            <div class="som-stat-val">${nbJurysUtilises}</div>
+            <div class="som-stat-label">Jury${nbJurysUtilises > 1 ? 's' : ''}</div>
+          </div>
+          <div class="som-stat-card">
+            <div class="som-stat-val">${nbCreneaux}</div>
+            <div class="som-stat-label">Créneau${nbCreneaux > 1 ? 'x' : ''}</div>
+          </div>
+          ${nbNonAff > 0 ? `
+          <div class="som-stat-card som-stat-warn">
+            <div class="som-stat-val">${nbNonAff}</div>
+            <div class="som-stat-label">Non affecté${nbNonAff > 1 ? 's' : ''}</div>
+          </div>` : ''}
+        </div>
+
+        <div class="som-classes-section">
+          <h3 class="som-classes-titre">Répartition par classe</h3>
+          <table class="som-classes-table">
+            <thead>
+              <tr><th>Classe</th><th>Candidats</th></tr>
+            </thead>
+            <tbody>
+              ${lignesClasses}
+              <tr class="som-total-row">
+                <td class="som-td-classe"><strong>TOTAL</strong></td>
+                <td class="som-td-nb"><strong>${elevesConcernes.size}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="som-footer">
+          <p>Document généré le ${now}</p>
+          <p>${this._esc(p.etablissement)} — ${this._esc(typeLabel)} — Oral ${this._esc(p.annee)}</p>
+        </div>
+
+      </div>`;
+  },
+
   convocationsEleves() {
     if (AppData.affectation.length === 0) {
       notifier('Lancez l\'affectation avant d\'imprimer les convocations.', 'warning'); return;
@@ -206,6 +343,18 @@ const Print = {
     if (!elevesAffectes.length) { notifier('Aucun élève affecté à imprimer.', 'warning'); return; }
 
     let pages = '';
+
+    // Date de l'épreuve formatée pour la convocation
+    let dateEpreuveConvoc = '';
+    if (AppData.params.dateEpreuve) {
+      try {
+        const dEpr = new Date(AppData.params.dateEpreuve + 'T12:00:00');
+        dateEpreuveConvoc = dEpr.toLocaleDateString('fr-FR', {
+          weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+        });
+        dateEpreuveConvoc = dateEpreuveConvoc.charAt(0).toUpperCase() + dateEpreuveConvoc.slice(1);
+      } catch { dateEpreuveConvoc = AppData.params.dateEpreuve; }
+    }
 
     elevesAffectes.forEach(({ eleve, creneau }) => {
       const jury      = AppData.getJury(creneau.juryId);
@@ -253,12 +402,13 @@ const Print = {
 
           <table class="convoc-table">
             <tr>
-              <th>Heure de convocation</th>
+              <th colspan="2">Date et heure de convocation</th>
               <th>Heure de passage</th>
               <th>Durée de l'épreuve</th>
               <th>Salle</th>
             </tr>
             <tr>
+              <td class="convoc-date-cell">${dateEpreuveConvoc}</td>
               <td class="convoc-heure-convoc"><strong>${hConvoc}</strong></td>
               <td class="convoc-heure-passage">${creneau.heureDebut}</td>
               <td>${creneau.duree} min</td>
@@ -278,7 +428,12 @@ const Print = {
         </div>`;
     });
 
-    this._imprimer(pages);
+    const _som1 = this._pageSommaire(
+      'Convocations élèves',
+      elevesAffectes.length,
+      elevesAffectes.length
+    );
+    this._imprimer(_som1 + pages);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -370,7 +525,10 @@ const Print = {
     });
 
     if (!pages) { notifier('Aucun créneau affecté.', 'warning'); return; }
-    this._imprimer(pages);
+    const _nbJurysP = AppData.jurys.filter(j => AppData.affectation.some(c => c.juryId === j.id)).length;
+    const _nbElevJ  = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
+    const _som2     = this._pageSommaire('Convocations jurys', _nbJurysP, _nbElevJ);
+    this._imprimer(_som2 + pages);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -431,7 +589,10 @@ const Print = {
     });
 
     html += '</div>';
-    this._imprimer(html);
+    const _nbElevR = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
+    const _nbJurR  = AppData.jurys.filter(j => AppData.affectation.some(c => c.juryId === j.id)).length;
+    const _som3    = this._pageSommaire('Récapitulatif candidats', _nbJurR + 1, _nbElevR);
+    this._imprimer(_som3 + html);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -508,7 +669,10 @@ const Print = {
     });
 
     if (!html) { notifier('Aucun créneau à émarger.', 'warning'); return; }
-    this._imprimer(html);
+    const _nbElevE = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
+    const _nbPagE  = AppData.jurys.filter(j => AppData.affectation.some(c => c.juryId === j.id)).length;
+    const _som4    = this._pageSommaire("Feuille d'émargement", _nbPagE, _nbElevE);
+    this._imprimer(_som4 + html);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -543,7 +707,9 @@ const Print = {
           <p><em>${this._esc(p.etablissement)} — Année scolaire ${this._esc(p.annee)}</em></p>
         </div>
       </div>`;
-    this._imprimer(html);
+    const _nbElevC = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
+    const _som5    = this._pageSommaire('Consignes jury', 1, _nbElevC);
+    this._imprimer(_som5 + html);
   },
 
   // ─────────────────────────────────────────────────────────────

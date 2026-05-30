@@ -1476,3 +1476,196 @@ dialog.modal::backdrop { display: none; }
   border-color: var(--blue-600, #2563eb);
   color: var(--blue-800, #1e40af);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   PAGE SOMMAIRE — première page de chaque document imprimé
+═══════════════════════════════════════════════════════════════ */
+
+@media print {
+
+  /* ── Date de convocation (nouvelle colonne) ─────────────────── */
+  .convoc-date-cell {
+    font-size: 10pt;
+    font-weight: bold;
+    color: #163566;
+    text-transform: capitalize;
+    padding: 6pt 8pt;
+    border: 1px solid #ccc;
+    text-align: center;
+    min-width: 90pt;
+  }
+
+  /* ── Page sommaire ──────────────────────────────────────────── */
+  .sommaire-page {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(297mm - 2cm);
+    padding: 1.2cm 1.8cm;
+    font-family: 'Georgia', serif;
+    gap: .6cm;
+  }
+
+  .som-header {
+    display: flex;
+    align-items: center;
+    gap: .5cm;
+    border-bottom: 2pt solid #163566;
+    padding-bottom: .4cm;
+  }
+  .sommaire-logo {
+    max-height: 55pt;
+    max-width: 110pt;
+    object-fit: contain;
+  }
+  .som-header-titre {}
+  .som-etab {
+    font-size: 13pt;
+    font-weight: bold;
+    color: #163566;
+  }
+  .som-annee {
+    font-size: 9pt;
+    color: #555;
+    margin-top: 2pt;
+  }
+
+  .som-titre-doc {
+    text-align: center;
+    margin: .3cm 0;
+  }
+  .som-type-epreuve {
+    font-size: 11pt;
+    color: #555;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .som-oral {
+    font-size: 16pt;
+    font-weight: bold;
+    color: #163566;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    margin: 4pt 0;
+  }
+  .som-date-epreuve {
+    font-size: 14pt;
+    font-weight: bold;
+    color: #dc2626 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin-top: 4pt;
+    border: 1.5pt solid #dc2626 !important;
+    display: inline-block;
+    padding: 4pt 16pt;
+    border-radius: 3pt;
+  }
+
+  .som-doc-label {
+    text-align: center;
+  }
+  .som-doc-type {
+    display: inline-block;
+    background: #163566 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: white !important;
+    font-size: 13pt;
+    font-weight: bold;
+    letter-spacing: .04em;
+    padding: 5pt 20pt;
+    border-radius: 3pt;
+  }
+
+  .som-stats-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .3cm;
+    justify-content: center;
+    margin: .2cm 0;
+  }
+  .som-stat-card {
+    border: 1pt solid #d1d5db;
+    border-radius: 4pt;
+    padding: 8pt 16pt;
+    text-align: center;
+    min-width: 70pt;
+  }
+  .som-stat-primary {
+    border-color: #163566 !important;
+    background: #f0f4ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .som-stat-warn {
+    border-color: #dc2626 !important;
+    background: #fff5f5 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .som-stat-val {
+    font-size: 22pt;
+    font-weight: bold;
+    color: #163566;
+    line-height: 1;
+  }
+  .som-stat-warn .som-stat-val { color: #dc2626; }
+  .som-stat-label {
+    font-size: 8pt;
+    color: #555;
+    margin-top: 2pt;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+
+  .som-classes-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: .2cm;
+  }
+  .som-classes-titre {
+    font-size: 10pt;
+    font-weight: bold;
+    color: #163566;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    border-bottom: 1pt solid #e2e8f0;
+    padding-bottom: 3pt;
+    margin: 0;
+  }
+  .som-classes-table {
+    border-collapse: collapse;
+    width: 220pt;
+    font-size: 10pt;
+  }
+  .som-classes-table th {
+    background: #163566 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: white !important;
+    padding: 4pt 10pt;
+    text-align: left;
+  }
+  .som-classes-table td {
+    padding: 4pt 10pt;
+    border-bottom: .5pt solid #e2e8f0;
+  }
+  .som-td-classe { font-weight: 600; color: #163566; }
+  .som-td-nb     { text-align: center; font-weight: bold; }
+  .som-total-row td {
+    border-top: 1.5pt solid #163566 !important;
+    background: #f8fafc !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .som-footer {
+    border-top: .5pt solid #e2e8f0;
+    padding-top: .3cm;
+    font-size: 7.5pt;
+    color: #888;
+    text-align: center;
+  }
+  .som-footer p { margin: 1pt 0; }
+}
+
