@@ -3,11 +3,9 @@
  * Oral DNB · Collège Joliot Curie  —  Rev.8
  *
  * Corrections Rev.8 (audit senior) :
- *   [BUG-3] Fallback langue "fill" supprimé : élève sans langue → jury sans langue UNIQUEMENT
- *           (conforme à la règle documentée dans data.js)
- *           Si aucun jury sans langue disponible → signalé comme non-affecté avec avertissement clair
- *
- * Conservé de Rev.6 :
+ * Conservé de Rev.6/7 (comportement métier confirmé) :
+ *   — Règle langue : élève avec LV → jury même LV ; élève sans LV → jury sans LV en priorité,
+ *     puis jury avec LV en complément (fill). Un jury avec LV peut accueillir des élèves sans LV.
  *   — escHtml supprimée (définie dans ui.js, exposée en window.escHtml)
  *   — Toutes les autres contraintes d'affectation maintenues
  */
@@ -238,7 +236,7 @@ const Affectation = {
     const jl = (juryLangue  || '').trim().toLowerCase();
     const el = (eleveLangue || '').trim().toLowerCase();
     if (jl === el) return 'exact';
-    // 'fill' retiré : plus utilisé en interne (BUG-3 fix)
+    if (jl !== '' && el === '') return 'fill'; // jury avec LV peut compléter avec des élèves sans LV
     return 'incompatible';
   },
 
@@ -281,15 +279,15 @@ const Affectation = {
       placerGroupe(groupe, jCompatibles, true);
     });
 
-    // [BUG-3 FIX] Passe 2 : élèves sans langue → jurys sans langue UNIQUEMENT
-    // Conformément à la règle stricte : "jury sans langue → élèves sans langue UNIQUEMENT"
-    // Pas de fallback vers les jurys avec langue (ce serait une violation réglementaire silencieuse)
+    // Passe 2 : élèves sans langue → jurys sans langue d'abord, puis jurys avec LV en complément
+    // Règle : un jury avec LV peut faire passer des élèves sans LV si nécessaire
     sansLangue.forEach(groupe => {
-      const jSansLangue = AppData.jurys.filter(j => (j.langue || '').trim() === '');
+      const jSansLangue = AppData.jurys.filter(j => this._prioriteLangue(j.langue, '') === 'exact');
       if (placerGroupe(groupe, jSansLangue, false)) return;
-      // Aucun jury sans langue disponible → signaler clairement
+      const jAvecLangue = AppData.jurys.filter(j => this._prioriteLangue(j.langue, '') === 'fill');
+      if (placerGroupe(groupe, jAvecLangue, false)) return;
       const noms = groupe.eleveIds.map(id => { const e=AppData.getEleve(id); return e?`${e.nom} ${e.prenom}`:'?'; }).join(', ');
-      avertAffect.push(`⚠ Aucun jury sans langue vivante disponible pour : ${noms}. Ajoutez un jury sans LV ou augmentez la capacité.`);
+      avertAffect.push(`Aucun jury disponible pour (sans langue) : ${noms}`);
     });
 
     return { plannings, avertAffect };
