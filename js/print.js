@@ -1,44 +1,125 @@
 /**
- * print.js — Génération et impression des 5 documents officiels
- * Oral DNB · Collège Joliot Curie  —  Brique 4
+ * print.js — Génération et impression des documents officiels
+ * Oral DNB · Collège Joliot Curie  —  Rev.5
  *
- * Documents :
- *   1. Convocations élèves  (une page par candidat)
- *   2. Convocations jurys   (planning complet du jury)
- *   3. Récapitulatif        (tous les candidats par jury)
- *   4. Feuille d'émargement (signatures)
- *   5. Consignes jury       (rappels réglementaires)
- *
- * Technique :
- *   - Génération HTML dans #print-zone (masqué à l'écran)
- *   - window.print() + @media print dans style.css
- *   - Aucune dépendance externe
+ * Nouveautés Rev.5 :
+ *   — Paramètres d'impression centraux (PrintConfig) :
+ *       logo (base64), signataire (fonction + nom), date, signature PNG
+ *   — Chaque document est configurable (sections activables/désactivables,
+ *       champs éditables) via la modal "Paramètres d'impression"
+ *   — @page margin=0 : suppression de l'en-tête/pied de page navigateur
+ *       (date/heure, URL, numéro de page) grâce à des marges gérées en CSS
  */
 
 'use strict';
 
+// ══════════════════════════════════════════════════════════════
+// PRINT CONFIG — valeurs par défaut, stockées dans AppData.params
+// ══════════════════════════════════════════════════════════════
+
+const PrintConfig = {
+
+  /** Retourne la config d'impression, avec valeurs par défaut */
+  get() {
+    const p = AppData.params;
+    if (!p.impression) p.impression = {};
+    const d = p.impression;
+    return {
+      // En-tête
+      logoBase64      : d.logoBase64      || null,          // image base64 ou null
+      // Signataire
+      fonctionSign    : d.fonctionSign    || 'Principal adjoint',
+      nomSign         : d.nomSign         || '',
+      dateSign        : d.dateSign        || '',             // 'YYYY-MM-DD' ou ''
+      signatureBase64 : d.signatureBase64 || null,          // PNG base64 ou null
+      // Options par document
+      convocEleve : {
+        afficherSujet       : d.convocEleve?.afficherSujet       ?? true,
+        afficherParcours    : d.convocEleve?.afficherParcours    ?? true,
+        afficherLangue      : d.convocEleve?.afficherLangue      ?? true,
+        afficherAmenagement : d.convocEleve?.afficherAmenagement ?? true,
+        afficherBinome      : d.convocEleve?.afficherBinome      ?? true,
+        consignesExtra      : d.convocEleve?.consignesExtra      || [],  // lignes supplémentaires
+        consignesSuppr      : d.convocEleve?.consignesSuppr      || [],  // indices à masquer (0-4)
+      },
+      convocJury : {
+        afficherSujet    : d.convocJury?.afficherSujet    ?? true,
+        afficherPauses   : d.convocJury?.afficherPauses   ?? true,
+        afficherRemarque : d.convocJury?.afficherRemarque ?? true,
+        remarqueTexte    : d.convocJury?.remarqueTexte    || "En cas d'empêchement ou de question urgente, contactez immédiatement le secrétariat ou la direction. Notez « ABS » en face de tout candidat absent. Conservez ce document jusqu'à la fin de la journée.",
+      },
+      recap : {
+        afficherSujet    : d.recap?.afficherSujet    ?? true,
+        afficherLangue   : d.recap?.afficherLangue   ?? true,
+        afficherClasse   : d.recap?.afficherClasse   ?? true,
+      },
+      emargement : {
+        afficherSujet    : d.emargement?.afficherSujet    ?? true,
+        afficherAmem     : d.emargement?.afficherAmem     ?? true,
+        colonneNote      : d.emargement?.colonneNote      ?? false,
+      },
+    };
+  },
+
+  /** Sauvegarde la config dans AppData.params.impression */
+  set(data) {
+    AppData.params.impression = data;
+    if (typeof Unsaved !== 'undefined') Unsaved.marquer();
+  },
+
+  /** Formate la date de signature pour l'affichage */
+  formatDateSign(dateStr) {
+    if (!dateStr) return '___________________';
+    try {
+      const d = new Date(dateStr + 'T12:00:00');
+      return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+    } catch { return dateStr; }
+  },
+};
+
+// ══════════════════════════════════════════════════════════════
+// PRINT — générateur de documents
+// ══════════════════════════════════════════════════════════════
+
 const Print = {
 
-  // ──────────────────────────────────────────────────────────────
-  // UTILITAIRES INTERNES
-  // ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
+  // UTILITAIRES
+  // ─────────────────────────────────────────────────────────────
 
-  /** Injecte le HTML dans la zone d'impression et ouvre la boîte d'impression. */
   _imprimer(html) {
     const zone = document.getElementById('print-zone');
     if (!zone) { console.error('[Print] #print-zone introuvable'); return; }
     zone.innerHTML = html;
     window.print();
-    // Nettoyage différé (après fermeture de la boîte d'impression)
     setTimeout(() => { zone.innerHTML = ''; }, 2000);
   },
 
-  /** En-tête commune à tous les documents */
+  _esc(str) {
+    return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  },
+
+  _convocHeure(heureDebut) {
+    return AppData.soustraireMinutes(heureDebut, AppData.params.convocAvant);
+  },
+
+  _nomEleve(e) { return `${this._esc(e.nom)} ${this._esc(e.prenom)}`; },
+
+  /**
+   * En-tête commune à tous les documents.
+   * Inclut le logo si disponible, centré à gauche.
+   */
   _entete(titre, sousTitre = '') {
-    const p = AppData.params;
+    const p   = AppData.params;
+    const cfg = PrintConfig.get();
+    const logoHtml = cfg.logoBase64
+      ? `<img src="${cfg.logoBase64}" class="print-logo" alt="Logo établissement" />`
+      : '<div class="print-logo-vide"></div>';
+
     return `
       <div class="print-header">
         <div class="print-header-left">
+          ${logoHtml}
           <div class="print-etab">${this._esc(p.etablissement)}</div>
           <div class="print-annee">Année scolaire ${this._esc(p.annee)}</div>
         </div>
@@ -51,43 +132,105 @@ const Print = {
           ${sousTitre ? `<div class="print-doc-sous">${sousTitre}</div>` : ''}
         </div>
       </div>
-      <hr class="print-hr" />
-    `;
+      <hr class="print-hr" />`;
   },
 
-  _esc(str) {
-    return String(str||'')
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  /**
+   * Bloc signataire (pied de convocation).
+   * Affiche : ville+date, fonction, nom, signature PNG si disponible.
+   */
+  _blocSignataire() {
+    const cfg  = PrintConfig.get();
+    const p    = AppData.params;
+    // Extraire la ville depuis le nom de l'établissement (avant le —) ou "Bagneux"
+    const ville = (p.etablissement||'').split('—')[0].replace(/collège|lycée|école/gi,'').trim() || 'Bagneux';
+    const date  = PrintConfig.formatDateSign(cfg.dateSign);
+    const signatureHtml = cfg.signatureBase64
+      ? `<img src="${cfg.signatureBase64}" class="print-signature-img" alt="Signature" />`
+      : '<div class="print-signature-vide"></div>';
+
+    return `
+      <div class="convoc-footer">
+        <div class="convoc-signature">
+          <p>Fait à ${this._esc(ville)}, le ${date}</p>
+          <p><strong>${this._esc(cfg.fonctionSign)}</strong></p>
+          ${cfg.nomSign ? `<p>${this._esc(cfg.nomSign)}</p>` : ''}
+          ${signatureHtml}
+          <p class="print-cachet-label">Cachet de l'établissement :</p>
+        </div>
+      </div>`;
   },
 
-  _convocHeure(heureDebut) {
-    return AppData.soustraireMinutes(heureDebut, AppData.params.convocAvant);
-  },
-
-  _nomEleve(e) { return `${this._esc(e.nom)} ${this._esc(e.prenom)}`; },
-
-  // ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   // 1. CONVOCATIONS ÉLÈVES
-  // ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
 
   convocationsEleves() {
     if (AppData.affectation.length === 0) {
-      notifier('Lancez l\'affectation avant d\'imprimer les convocations.', 'warning');
-      return;
+      notifier('Lancez l\'affectation avant d\'imprimer les convocations.', 'warning'); return;
     }
+
+    const cfg = PrintConfig.get().convocEleve;
+
+    // Consignes de base (indices 0-4), certaines peuvent être masquées
+    const consignesBase = [
+      'Présentez-vous à l\'heure de <strong>convocation</strong> indiquée (et non à l\'heure de passage).',
+      'Apportez votre <strong>exposé préparé</strong> (document de présentation autorisé).',
+      'Si vous utilisez une <strong>présentation informatique</strong>, vous devez vous assurer <em>les jours précédents</em> que votre présentation fonctionne correctement : <strong>les clés USB ne seront pas autorisées</strong>. Privilégiez un espace de stockage en ligne ou un envoi à votre enseignant.',
+      'Les téléphones portables doivent être <strong>éteints et rangés</strong>.',
+      'Aucun document supplémentaire ne sera fourni par le jury.',
+    ];
+
+    const consignesActives = consignesBase
+      .filter((_, i) => !(cfg.consignesSuppr || []).includes(i));
+    const consignesExtras = (cfg.consignesExtra || []).filter(Boolean);
+
+    const elevesAffectes = AppData.eleves
+      .map(eleve => {
+        const creneau = AppData.affectation.find(c => c.eleveIds.includes(eleve.id));
+        return creneau ? { eleve, creneau } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const hA = a.creneau.heureDebut, hB = b.creneau.heureDebut;
+        if (hA !== hB) return hA < hB ? -1 : 1;
+        return a.eleve.nom.localeCompare(b.eleve.nom, 'fr');
+      });
+
+    if (!elevesAffectes.length) { notifier('Aucun élève affecté à imprimer.', 'warning'); return; }
 
     let pages = '';
 
-    AppData.eleves.forEach(eleve => {
-      const creneau = AppData.affectation.find(c => c.eleveIds.includes(eleve.id));
-      if (!creneau) return; // élève non affecté
-
+    elevesAffectes.forEach(({ eleve, creneau }) => {
       const jury      = AppData.getJury(creneau.juryId);
       const hConvoc   = this._convocHeure(creneau.heureDebut);
       const partenaire = creneau.isBinome
         ? AppData.getEleve(creneau.eleveIds.find(id => id !== eleve.id))
         : null;
+
+      // Aménagements
+      const amenagements = [];
+      if (eleve.amenagement) amenagements.push('Bénéficiaire d\'un tiers-temps (durée majorée)');
+      if (eleve.prioritaire)  amenagements.push('Passage prioritaire');
+      const blocAmenagement = cfg.afficherAmenagement && amenagements.length > 0
+        ? `<div class="convoc-amenagements">
+            <span class="convoc-amem-titre">⚙ Aménagements :</span>
+            ${amenagements.map(a=>`<span class="convoc-badge-amem">${this._esc(a)}</span>`).join(' ')}
+           </div>`
+        : '';
+
+      // Sujet / parcours
+      const blocSujet = (cfg.afficherSujet || cfg.afficherParcours) && (eleve.sujet || eleve.parcours)
+        ? `<div class="convoc-sujet-bloc">
+            ${cfg.afficherParcours && eleve.parcours ? `<div class="convoc-sujet-ligne"><span class="convoc-sujet-label">Parcours choisi :</span> <strong>${this._esc(eleve.parcours)}</strong></div>` : ''}
+            ${cfg.afficherSujet    && eleve.sujet    ? `<div class="convoc-sujet-ligne"><span class="convoc-sujet-label">Sujet préparé :</span> <strong>${this._esc(eleve.sujet)}</strong></div>` : ''}
+           </div>`
+        : '';
+
+      // Langue
+      const blocLangue = cfg.afficherLangue && eleve.langue
+        ? `<div class="convoc-langue">Langue vivante : <strong>${this._esc(eleve.langue)}</strong></div>`
+        : '';
 
       pages += `
         <div class="print-page convocation-eleve">
@@ -95,16 +238,21 @@ const Print = {
 
           <div class="convoc-bloc-eleve">
             <div class="convoc-nom">${this._nomEleve(eleve)}</div>
-            <div class="convoc-classe">Classe : <strong>${this._esc(eleve.classe)}</strong></div>
-            ${eleve.amenagement ? '<div class="convoc-badge-amem">⏱ Bénéficiaire d\'un tiers-temps</div>' : ''}
-            ${partenaire ? `<div class="convoc-binome">Passage en binôme avec : <strong>${this._nomEleve(partenaire)}</strong></div>` : ''}
+            <div class="convoc-classe-row">
+              <span>Classe : <strong>${this._esc(eleve.classe)}</strong></span>
+              ${blocLangue}
+            </div>
+            ${blocAmenagement}
+            ${cfg.afficherBinome && partenaire ? `<div class="convoc-binome">📋 Passage en <strong>binôme</strong> avec : <strong>${this._nomEleve(partenaire)}</strong></div>` : ''}
           </div>
+
+          ${blocSujet}
 
           <table class="convoc-table">
             <tr>
               <th>Heure de convocation</th>
               <th>Heure de passage</th>
-              <th>Durée</th>
+              <th>Durée de l'épreuve</th>
               <th>Salle</th>
             </tr>
             <tr>
@@ -118,336 +266,560 @@ const Print = {
           <div class="convoc-consignes-eleve">
             <p><strong>Consignes :</strong></p>
             <ul>
-              <li>Présentez-vous à l'heure de <strong>convocation</strong> indiquée (et non à l'heure de passage).</li>
-              <li>Apportez votre carnet de correspondance ou pièce d'identité.</li>
-              <li>Apportez votre <strong>exposé préparé</strong> (document de présentation autorisé).</li>
-              <li>Les téléphones portables doivent être éteints et rangés.</li>
-              <li>Aucun document supplémentaire ne sera fourni par le jury.</li>
+              ${consignesActives.map(c=>`<li>${c}</li>`).join('')}
+              ${consignesExtras.map(c=>`<li>${this._esc(c)}</li>`).join('')}
             </ul>
           </div>
 
-          <div class="convoc-footer">
-            <div class="convoc-signature">
-              <p>Fait à Bagneux, le ___________________</p>
-              <p>Le Principal</p>
-              <br /><br />
-              <p>Cachet de l'établissement :</p>
-            </div>
-          </div>
-        </div>
-      `;
+          ${this._blocSignataire()}
+        </div>`;
     });
 
-    if (!pages) { notifier('Aucun élève affecté à imprimer.', 'warning'); return; }
     this._imprimer(pages);
   },
 
-  // ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   // 2. CONVOCATIONS JURYS
-  // ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
 
   convocationsJurys() {
     if (AppData.affectation.length === 0) {
-      notifier('Lancez l\'affectation avant d\'imprimer les convocations jury.', 'warning');
-      return;
+      notifier('Lancez l\'affectation avant d\'imprimer les convocations jury.', 'warning'); return;
     }
 
+    const cfg = PrintConfig.get().convocJury;
     let pages = '';
 
     AppData.jurys.forEach(jury => {
-      const creneaux = AppData.affectation
-        .filter(c => c.juryId === jury.id)
-        .sort((a,b) => a.ordre - b.ordre);
+      const creneaux = AppData.affectation.filter(c=>c.juryId===jury.id).sort((a,b)=>a.ordre-b.ordre);
+      if (!creneaux.length) return;
 
-      if (creneaux.length === 0) return;
+      const membres = jury.nom.split('/').map(m=>m.trim()).filter(Boolean);
+      const blocsMembers = membres.map((m,i) => `
+        <div class="jury-membre-bloc">
+          <span class="jury-membre-num">Enseignant${membres.length>1?' '+(i+1):''}</span>
+          <strong class="jury-membre-nom">${this._esc(m)}</strong>
+        </div>`).join('');
+
+      const hDebut  = creneaux[0].heureDebut;
+      const hFinale = creneaux[creneaux.length-1].heureFin;
+      const nbCand  = creneaux.reduce((s,c)=>s+c.eleveIds.length,0);
+
+      const pausesTexte = cfg.afficherPauses
+        ? ((AppData.params.pauses||[]).filter(p=>p.active&&p.duree>0).map(p=>`${p.heure} (${p.duree} min)`).join(', ') || 'Aucune')
+        : null;
 
       const lignes = creneaux.map(c => {
-        const noms = c.eleveIds.map(id => {
-          const e = AppData.getEleve(id);
-          return e ? `${this._esc(e.nom)} ${this._esc(e.prenom)}` : '?';
-        }).join('<br/>');
-        const classes = c.eleveIds.map(id => {
-          const e = AppData.getEleve(id);
-          return e ? this._esc(e.classe) : '';
-        }).join(' / ');
-        const flags = c.eleveIds.map(id => {
-          const e = AppData.getEleve(id);
-          if (!e) return '';
-          const f = [];
-          if (e.amenagement) f.push('1/3 tps');
-          if (e.prioritaire)  f.push('Prior.');
-          return f.join(', ');
-        }).filter(Boolean).join(' | ');
-
-        return `
-          <tr>
-            <td class="text-center">${c.ordre}</td>
-            <td>${c.heureDebut}</td>
-            <td>${c.heureFin}</td>
-            <td class="text-center">${c.duree} min</td>
-            <td>${noms}</td>
-            <td>${classes}</td>
-            <td class="text-center">${c.isBinome ? 'Oui' : ''}</td>
-            <td>${flags}</td>
-          </tr>
-        `;
+        const candidats = c.eleveIds.map(id => {
+          const e = AppData.getEleve(id); if (!e) return { html:'?', sujet:'' };
+          const flags = [];
+          if (e.amenagement) flags.push('<span class="print-badge-amem">1/3 tps</span>');
+          if (e.prioritaire)  flags.push('<span class="print-badge-prio">Prior.</span>');
+          if (c.isBinome)     flags.push('<span class="print-badge-bin">Binôme</span>');
+          return {
+            html  : `<span class="jury-cand-nom">${this._esc(e.nom)} ${this._esc(e.prenom)}</span><span class="jury-cand-classe">${this._esc(e.classe)}</span>${flags.join('')}`,
+            sujet : e.sujet || '',
+          };
+        });
+        const sujetCell = cfg.afficherSujet
+          ? `<td class="jury-sujet-cell">${candidats.map(ca=>this._esc(ca.sujet)).filter(Boolean).join('<br/>')}</td>`
+          : '';
+        return `<tr>
+          <td class="text-center"><strong>${c.ordre}</strong></td>
+          <td><strong>${c.heureDebut}</strong></td>
+          <td>${c.heureFin}</td>
+          <td class="text-center">${c.duree} min</td>
+          <td>${candidats.map(ca=>ca.html).join('<hr class="cand-sep"/>')}</td>
+          ${sujetCell}
+        </tr>`;
       }).join('');
 
-      const hFinale = creneaux[creneaux.length-1].heureFin;
-      const hDebut  = creneaux[0].heureDebut;
+      const thSujet = cfg.afficherSujet ? '<th>Sujet / Parcours</th>' : '';
 
       pages += `
         <div class="print-page convocation-jury">
-          ${this._entete('CONVOCATION JURY', `${this._esc(jury.nom)} — Salle ${this._esc(jury.salle)}`)}
-
-          <div class="jury-info-grid">
-            <div><span class="label">Enseignant :</span> <strong>${this._esc(jury.nom)}</strong></div>
-            <div><span class="label">Matière :</span> ${this._esc(jury.matiere)}</div>
-            <div><span class="label">Salle :</span> <strong>${this._esc(jury.salle)}</strong></div>
-            <div><span class="label">Langue vivante :</span> ${this._esc(jury.lv)} ${jury.langueDetail ? '('+this._esc(jury.langueDetail)+')' : ''}</div>
-            <div><span class="label">Début :</span> ${hDebut}</div>
-            <div><span class="label">Fin prévisionnelle :</span> ${hFinale}</div>
-            <div><span class="label">Nombre de candidats :</span> ${creneaux.reduce((s,c)=>s+c.eleveIds.length,0)}</div>
+          ${this._entete('CONVOCATION JURY', `Salle ${this._esc(jury.salle)}`)}
+          <div class="jury-membres-grid">${blocsMembers}</div>
+          <div class="jury-info-bandeau">
+            <div class="jury-info-item"><span class="label">Salle</span><strong>${this._esc(jury.salle)}</strong></div>
+            <div class="jury-info-item"><span class="label">Langue vivante</span><strong>${jury.langue?this._esc(jury.langue):'Toutes / Sans'}</strong></div>
+            <div class="jury-info-item"><span class="label">Début</span><strong>${hDebut}</strong></div>
+            <div class="jury-info-item"><span class="label">Fin prévisionnelle</span><strong>${hFinale}</strong></div>
+            <div class="jury-info-item"><span class="label">Candidats</span><strong>${nbCand}</strong></div>
+            ${pausesTexte !== null ? `<div class="jury-info-item"><span class="label">Pause(s)</span><span>${this._esc(pausesTexte)}</span></div>` : ''}
           </div>
-
           <h3 class="print-section-titre">Planning des passages</h3>
           <table class="print-table">
             <thead>
               <tr>
-                <th>#</th><th>Début</th><th>Fin</th><th>Durée</th>
-                <th>Candidat(s)</th><th>Classe</th><th>Binôme</th><th>Particularités</th>
+                <th style="width:28pt">#</th>
+                <th style="width:38pt">Début</th>
+                <th style="width:38pt">Fin</th>
+                <th style="width:36pt">Durée</th>
+                <th>Candidat(s)</th>
+                ${thSujet}
               </tr>
             </thead>
             <tbody>${lignes}</tbody>
           </table>
-
-          <div class="jury-remarques">
-            <strong>Remarques :</strong> En cas d'empêchement ou de question, contactez immédiatement le secrétariat.
-            ${(AppData.params.pauses||[]).filter(p=>p.active&&p.duree>0).map(p=>`Pause ${this._esc(p.heure)} (${p.duree} min)`).join(', ') || 'Aucune pause planifiée'}..
-          </div>
-        </div>
-      `;
+          ${cfg.afficherRemarque ? `<div class="jury-remarques">${this._esc(cfg.remarqueTexte)}</div>` : ''}
+        </div>`;
     });
 
-    if (!pages) { notifier('Aucun créneau affecté à imprimer.', 'warning'); return; }
+    if (!pages) { notifier('Aucun créneau affecté.', 'warning'); return; }
     this._imprimer(pages);
   },
 
-  // ──────────────────────────────────────────────────────────────
-  // 3. RÉCAPITULATIF CANDIDATS PAR JURY
-  // ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
+  // 3. RÉCAPITULATIF
+  // ─────────────────────────────────────────────────────────────
 
   recapitulatif() {
     if (AppData.affectation.length === 0) {
-      notifier('Lancez l\'affectation avant d\'imprimer le récapitulatif.', 'warning');
-      return;
+      notifier('Lancez l\'affectation avant d\'imprimer le récapitulatif.', 'warning'); return;
     }
 
+    const cfg  = PrintConfig.get().recap;
     const date = new Date().toLocaleDateString('fr-FR', {day:'2-digit',month:'long',year:'numeric'});
-    let html = `
-      <div class="print-page recap-page">
-        ${this._entete('RÉCAPITULATIF', 'Candidats par jury')}
-        <p class="recap-date">Édité le ${date} — ${AppData.nbEleves()} candidat(s) — ${AppData.nbJurys()} jury(s)</p>
-    `;
+
+    let html = `<div class="print-page recap-page">
+      ${this._entete('RÉCAPITULATIF', 'Candidats par jury')}
+      <p class="recap-date">Édité le ${date} — ${AppData.nbEleves()} candidat(s) — ${AppData.nbJurys()} jury(s)</p>`;
 
     AppData.jurys.forEach(jury => {
-      const creneaux = AppData.affectation.filter(c => c.juryId === jury.id).sort((a,b)=>a.ordre-b.ordre);
-      if (creneaux.length === 0) return;
+      const creneaux = AppData.affectation.filter(c=>c.juryId===jury.id).sort((a,b)=>a.ordre-b.ordre);
+      if (!creneaux.length) return;
 
-      const lignes = creneaux.map(c => {
-        return c.eleveIds.map(id => {
-          const e = AppData.getEleve(id);
-          if (!e) return '';
+      const lignes = creneaux.map(c =>
+        c.eleveIds.map(id => {
+          const e = AppData.getEleve(id); if (!e) return '';
           const flags = [];
           if (e.amenagement) flags.push('1/3 tps');
           if (e.prioritaire)  flags.push('Prioritaire');
           if (c.isBinome)     flags.push('Binôme');
-          return `
-            <tr>
-              <td>${c.ordre}</td>
-              <td>${c.heureDebut}</td>
-              <td>${c.heureFin}</td>
-              <td><strong>${this._esc(e.nom)}</strong></td>
-              <td>${this._esc(e.prenom)}</td>
-              <td>${this._esc(e.classe)}</td>
-              <td>${this._esc(e.lv)}</td>
-              <td>${flags.join(', ')}</td>
-            </tr>`;
-        }).join('');
-      }).join('');
+          const tdClasse = cfg.afficherClasse ? `<td>${this._esc(e.classe)}</td>` : '';
+          const tdLV     = cfg.afficherLangue ? `<td>${this._esc(e.langue||'—')}</td>` : '';
+          const tdSujet  = cfg.afficherSujet  ? `<td class="recap-sujet">${this._esc(e.sujet||'—')}</td>` : '';
+          return `<tr>
+            <td>${c.ordre}</td>
+            <td>${c.heureDebut}</td><td>${c.heureFin}</td>
+            <td><strong>${this._esc(e.nom)}</strong></td>
+            <td>${this._esc(e.prenom)}</td>
+            ${tdClasse}${tdLV}${tdSujet}
+            <td>${flags.join(', ')}</td>
+          </tr>`;
+        }).join('')
+      ).join('');
 
-      html += `
-        <div class="recap-jury-bloc">
-          <div class="recap-jury-titre">
-            Jury : <strong>${this._esc(jury.nom)}</strong> — Salle <strong>${this._esc(jury.salle)}</strong>
-            — ${this._esc(jury.matiere)} — ${this._esc(jury.lv)}
-            ${jury.langueDetail ? '('+this._esc(jury.langueDetail)+')' : ''}
-          </div>
-          <table class="print-table">
-            <thead>
-              <tr><th>#</th><th>Début</th><th>Fin</th><th>Nom</th><th>Prénom</th><th>Classe</th><th>LV</th><th>Particularités</th></tr>
-            </thead>
-            <tbody>${lignes}</tbody>
-          </table>
+      const thClasse = cfg.afficherClasse ? '<th>Classe</th>' : '';
+      const thLV     = cfg.afficherLangue ? '<th>LV</th>'     : '';
+      const thSujet  = cfg.afficherSujet  ? '<th>Sujet</th>'  : '';
+
+      html += `<div class="recap-jury-bloc">
+        <div class="recap-jury-titre">
+          Jury : <strong>${this._esc(jury.nom)}</strong> — Salle <strong>${this._esc(jury.salle)}</strong>
+          ${jury.langue ? '— ' + this._esc(jury.langue) : ''}
         </div>
-      `;
+        <table class="print-table">
+          <thead><tr><th>#</th><th>Début</th><th>Fin</th><th>Nom</th><th>Prénom</th>${thClasse}${thLV}${thSujet}<th>Particularités</th></tr></thead>
+          <tbody>${lignes}</tbody>
+        </table>
+      </div>`;
     });
 
     html += '</div>';
     this._imprimer(html);
   },
 
-  // ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   // 4. FEUILLE D'ÉMARGEMENT
-  // ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
 
   feuilleEmargement() {
     if (AppData.affectation.length === 0) {
-      notifier('Lancez l\'affectation avant d\'imprimer la feuille d\'émargement.', 'warning');
-      return;
+      notifier('Lancez l\'affectation avant d\'imprimer la feuille d\'émargement.', 'warning'); return;
     }
 
-    let html = '';
+    const cfg = PrintConfig.get().emargement;
+    let html  = '';
 
     AppData.jurys.forEach(jury => {
-      const creneaux = AppData.affectation.filter(c => c.juryId === jury.id).sort((a,b)=>a.ordre-b.ordre);
-      if (creneaux.length === 0) return;
+      const creneaux = AppData.affectation.filter(c=>c.juryId===jury.id).sort((a,b)=>a.ordre-b.ordre);
+      if (!creneaux.length) return;
 
-      const lignes = creneaux.map(c => {
-        return c.eleveIds.map(id => {
-          const e = AppData.getEleve(id);
-          if (!e) return '';
-          return `
-            <tr class="emarg-ligne">
-              <td>${c.heureDebut}</td>
-              <td><strong>${this._esc(e.nom)}</strong></td>
-              <td>${this._esc(e.prenom)}</td>
-              <td>${this._esc(e.classe)}</td>
-              <td>${this._esc(e.lv)}</td>
-              <td>${e.amenagement ? '1/3 tps' : ''}</td>
-              <td class="emarg-signature"></td>
-              <td class="emarg-note"></td>
-            </tr>`;
-        }).join('');
-      }).join('');
+      const lignes = creneaux.map(c =>
+        c.eleveIds.map(id => {
+          const e = AppData.getEleve(id); if (!e) return '';
+          const flags = [];
+          if (e.amenagement) flags.push('1/3 tps');
+          if (e.prioritaire)  flags.push('Prior.');
+          if (c.isBinome)     flags.push('Binôme');
+          const tdAmem  = cfg.afficherAmem  ? `<td class="emarg-amem">${flags.join('<br/>')}</td>` : '';
+          const tdSujet = cfg.afficherSujet ? `<td class="emarg-sujet">${this._esc(e.sujet||'')}</td>` : '';
+          const tdNote  = cfg.colonneNote   ? `<td class="emarg-note"></td>` : '';
+          return `<tr class="emarg-ligne">
+            <td class="emarg-heure">${c.heureDebut}</td>
+            <td class="emarg-nom"><strong>${this._esc(e.nom)}</strong><br/><span class="emarg-prenom">${this._esc(e.prenom)}</span></td>
+            <td>${this._esc(e.classe)}</td>
+            ${tdAmem}${tdSujet}
+            <td class="emarg-signature-cell"><div class="emarg-sign-zone"></div></td>
+            ${tdNote}
+          </tr>`;
+        }).join('')
+      ).join('');
+
+      const thAmem  = cfg.afficherAmem  ? '<th style="width:42pt">Particularités</th>' : '';
+      const thSujet = cfg.afficherSujet ? '<th>Sujet</th>'                              : '';
+      const thNote  = cfg.colonneNote   ? '<th style="width:48pt">Note jury</th>'      : '';
 
       html += `
         <div class="print-page emarg-page">
           ${this._entete('FEUILLE D\'ÉMARGEMENT', `Jury : ${this._esc(jury.nom)} — Salle ${this._esc(jury.salle)}`)}
-
-          <div class="jury-info-grid small">
-            <div><span class="label">Enseignant :</span> <strong>${this._esc(jury.nom)}</strong></div>
-            <div><span class="label">Salle :</span> <strong>${this._esc(jury.salle)}</strong></div>
-            <div><span class="label">LV :</span> ${this._esc(jury.lv)} ${jury.langueDetail?'('+this._esc(jury.langueDetail)+')':''}</div>
-            <div><span class="label">Nb candidats :</span> ${creneaux.reduce((s,c)=>s+c.eleveIds.length,0)}</div>
+          <div class="jury-info-bandeau small">
+            <div class="jury-info-item"><span class="label">Enseignant(s)</span><strong>${this._esc(jury.nom)}</strong></div>
+            <div class="jury-info-item"><span class="label">Salle</span><strong>${this._esc(jury.salle)}</strong></div>
+            <div class="jury-info-item"><span class="label">Langue</span><strong>${jury.langue?this._esc(jury.langue):'—'}</strong></div>
+            <div class="jury-info-item"><span class="label">Nb candidats</span><strong>${creneaux.reduce((s,c)=>s+c.eleveIds.length,0)}</strong></div>
           </div>
-
           <table class="print-table emarg-table">
             <thead>
               <tr>
-                <th>Heure</th><th>Nom</th><th>Prénom</th><th>Classe</th>
-                <th>LV</th><th>Amén.</th>
-                <th style="width:80px">Signature élève</th>
-                <th style="width:60px">Note jury</th>
+                <th style="width:38pt">Heure</th>
+                <th style="width:80pt">Candidat</th>
+                <th style="width:35pt">Classe</th>
+                ${thAmem}${thSujet}
+                <th style="width:130pt">Signature du candidat</th>
+                ${thNote}
               </tr>
             </thead>
             <tbody>${lignes}</tbody>
           </table>
-
           <div class="emarg-certif">
             <p>Je soussigné(e), <strong>${this._esc(jury.nom)}</strong>, certifie avoir fait passer les candidats ci-dessus.</p>
-            <div class="emarg-sign-jury">
-              <span>Date et signature du jury :</span>
-              <div class="sign-box"></div>
+            <div class="emarg-sign-jury-row">
+              <div class="emarg-sign-jury-item"><span>Date :</span><div class="sign-box-date"></div></div>
+              <div class="emarg-sign-jury-item large"><span>Signature du jury :</span><div class="sign-box-jury"></div></div>
             </div>
           </div>
-        </div>
-      `;
+        </div>`;
     });
 
     if (!html) { notifier('Aucun créneau à émarger.', 'warning'); return; }
     this._imprimer(html);
   },
 
-  // ──────────────────────────────────────────────────────────────
-  // 5. CONSIGNES JURY
-  // ──────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
+  // 5. CONSIGNES JURY (éditables)
+  // ─────────────────────────────────────────────────────────────
+
+  _getConsignes() {
+    const p = AppData.params;
+    if (p.consignesJury && Array.isArray(p.consignesJury) && p.consignesJury.length > 0) return p.consignesJury;
+    return [
+      { titre:'⏱ Durée des passages', items:[`Passage solo : ${p.dureeSolo} minutes`,`Passage binôme : ${p.dureeBinome} minutes`,'Candidat avec aménagement tiers-temps : durée × 4/3 arrondie à 5 min'] },
+      { titre:'📋 Structure de l\'épreuve (solo)', items:['5 min — Exposé du candidat (sans interruption du jury)','10 min — Entretien avec le jury sur la présentation','10 min — Questions sur le programme (Langue Vivante comprise)'] },
+      { titre:'✅ À vérifier à chaque passage', items:['Identité du candidat (pièce d\'identité ou carnet)','Présence d\'un support de présentation (autorisé)','La langue vivante du candidat correspond à votre jury','Signaler tout incident sur la feuille d\'émargement'] },
+      { titre:'📝 Notation', items:['Note sur 100 points','Compétences : expression orale, maîtrise du sujet, réponses aux questions','Remettre la grille d\'évaluation complétée et signée au secrétariat'] },
+      { titre:'⚠ Points de vigilance', items:['Confidentialité : ne pas communiquer les notes avant la proclamation','Neutralité : aucun commentaire sur la prestation devant d\'autres candidats','Candidat absent : noter « ABS » sur la feuille d\'émargement',`Pauses prévues : ${(p.pauses||[]).filter(pa=>pa.active&&pa.duree>0).map(pa=>`${pa.heure} (${pa.duree} min)`).join(', ')||'Aucune'}`] },
+      { titre:'📞 En cas de problème', items:['Contacter immédiatement le secrétariat ou la direction','Ne pas prendre de décision individuelle concernant un candidat absent','En cas de fraude : interrompre le passage et alerter la direction sans délai'] },
+    ];
+  },
 
   consignesJury() {
-    const p = AppData.params;
+    const p = AppData.params, blocs = this._getConsignes();
     const html = `
       <div class="print-page consignes-page">
         ${this._entete('CONSIGNES JURY', 'Épreuve orale du DNB')}
-
-        <h3 class="consignes-titre">Déroulement de l'épreuve</h3>
-        <p>L'épreuve orale du Diplôme National du Brevet évalue la capacité du candidat à présenter et défendre un exposé.</p>
-
+        <h3 class="consignes-titre">Déroulement de l'épreuve orale</h3>
+        <p class="consignes-intro">L'épreuve orale du Diplôme National du Brevet évalue la capacité du candidat à présenter et défendre un exposé construit à partir d'un sujet choisi en lien avec les enseignements.</p>
         <div class="consignes-grid">
-          <div class="consigne-bloc">
-            <h4>⏱ Durée des passages</h4>
-            <ul>
-              <li>Passage <strong>solo</strong> : <strong>${p.dureeSolo} minutes</strong></li>
-              <li>Passage <strong>binôme</strong> : <strong>${p.dureeBinome} minutes</strong></li>
-              <li>Candidat avec <strong>aménagement tiers-temps</strong> : durée × 4/3 arrondie à 5 min</li>
-            </ul>
-          </div>
-
-          <div class="consigne-bloc">
-            <h4>📋 Structure de l'épreuve (solo)</h4>
-            <ul>
-              <li><strong>5 min</strong> — Exposé du candidat (sans interruption)</li>
-              <li><strong>10 min</strong> — Entretien avec le jury</li>
-              <li><strong>10 min</strong> — Questions sur le programme (LV comprise)</li>
-            </ul>
-          </div>
-
-          <div class="consigne-bloc">
-            <h4>✅ À vérifier à chaque passage</h4>
-            <ul>
-              <li>Identité du candidat (carnet ou pièce d'identité)</li>
-              <li>Présence d'un document de présentation (autorisé)</li>
-              <li>Langue vivante du candidat correspond à votre jury</li>
-              <li>Signaler tout incident sur la feuille d'émargement</li>
-            </ul>
-          </div>
-
-          <div class="consigne-bloc">
-            <h4>📝 Notation</h4>
-            <ul>
-              <li>Note sur <strong>100 points</strong> (coefficient selon textes)</li>
-              <li>Compétences évaluées : expression orale, maîtrise du sujet, réponses aux questions</li>
-              <li>Remettre la grille d'évaluation complétée et signée au secrétariat</li>
-            </ul>
-          </div>
-
-          <div class="consigne-bloc">
-            <h4>⚠ Points de vigilance</h4>
-            <ul>
-              <li>Confidentialité : ne pas communiquer les notes avant la proclamation</li>
-              <li>Neutralité : aucun commentaire sur la prestation devant d'autres élèves</li>
-              <li>Absence d'un candidat : noter "ABS" sur la feuille d'émargement</li>
-              <li>Pauses : ${(p.pauses||[]).filter(pa=>pa.active&&pa.duree>0).map(pa=>`${pa.heure} (${pa.duree} min)`).join(', ') || 'Aucune'}</li>
-            </ul>
-          </div>
-
-          <div class="consigne-bloc">
-            <h4>📞 En cas de problème</h4>
-            <ul>
-              <li>Contacter immédiatement le secrétariat ou la direction</li>
-              <li>Ne pas prendre de décision individuelle concernant un candidat absent</li>
-              <li>En cas de fraude : interrompre le passage et alerter la direction</li>
-            </ul>
-          </div>
+          ${blocs.map(b=>`<div class="consigne-bloc"><h4>${this._esc(b.titre)}</h4><ul>${(b.items||[]).map(it=>`<li>${this._esc(it)}</li>`).join('')}</ul></div>`).join('')}
         </div>
-
         <div class="consignes-footer">
-          <p>Merci de votre engagement pour cet examen. La direction reste disponible tout au long de la journée.</p>
+          <p>Merci de votre engagement pour cet examen. La direction reste disponible toute la journée.</p>
           <p><em>${this._esc(p.etablissement)} — Année scolaire ${this._esc(p.annee)}</em></p>
         </div>
-      </div>
-    `;
+      </div>`;
     this._imprimer(html);
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // ÉDITEUR CONSIGNES
+  // ─────────────────────────────────────────────────────────────
+
+  ouvrirEditeurConsignes() {
+    const blocs = this._getConsignes();
+    this._renderEditeurContenu(blocs);
+    if (typeof ouvrirModal === 'function') ouvrirModal('modal-consignes');
+  },
+
+  _renderEditeurContenu(blocs) {
+    const container = document.getElementById('consignes-editor-content'); if (!container) return;
+    container.innerHTML = blocs.map((bloc, bi) => `
+      <div class="consigne-edit-bloc" data-bloc="${bi}">
+        <div class="consigne-edit-titre-row">
+          <input type="text" class="consigne-edit-titre" value="${_esc2(bloc.titre)}" placeholder="Titre du bloc…" data-bloc="${bi}" />
+          <button class="btn btn-icon btn-del consigne-del-bloc" data-bloc="${bi}" title="Supprimer ce bloc">🗑</button>
+        </div>
+        <div class="consigne-edit-items" data-bloc="${bi}">
+          ${(bloc.items||[]).map((item,ii)=>`
+            <div class="consigne-edit-item-row" data-item="${ii}">
+              <span class="consigne-edit-bullet">•</span>
+              <input type="text" class="consigne-edit-item" value="${_esc2(item)}" placeholder="Consigne…" data-bloc="${bi}" data-item="${ii}" />
+              <button class="btn btn-icon btn-del consigne-del-item" data-bloc="${bi}" data-item="${ii}" title="Supprimer">✕</button>
+            </div>`).join('')}
+        </div>
+        <button class="btn btn-sm consigne-add-item" data-bloc="${bi}">+ Ajouter une ligne</button>
+      </div>`).join('') +
+      `<button class="btn btn-outline consigne-add-bloc" style="width:100%;margin-top:.75rem">+ Ajouter un bloc</button>`;
+    this._bindEditeurEvents(container);
+  },
+
+  _bindEditeurEvents(container) {
+    container.querySelectorAll('.consigne-del-bloc').forEach(btn => btn.addEventListener('click', () => {
+      const b = this._lireEditeur(); b.splice(parseInt(btn.dataset.bloc),1); this._renderEditeurContenu(b);
+    }));
+    container.querySelectorAll('.consigne-del-item').forEach(btn => btn.addEventListener('click', () => {
+      const b = this._lireEditeur(); b[parseInt(btn.dataset.bloc)].items.splice(parseInt(btn.dataset.item),1); this._renderEditeurContenu(b);
+    }));
+    container.querySelectorAll('.consigne-add-item').forEach(btn => btn.addEventListener('click', () => {
+      const b = this._lireEditeur(), bi = parseInt(btn.dataset.bloc);
+      b[bi].items.push(''); this._renderEditeurContenu(b);
+      const inputs = container.querySelectorAll(`.consigne-edit-item[data-bloc="${bi}"]`);
+      if (inputs.length) inputs[inputs.length-1].focus();
+    }));
+    container.querySelector('.consigne-add-bloc')?.addEventListener('click', () => {
+      const b = this._lireEditeur(); b.push({ titre:'Nouveau bloc', items:[''] }); this._renderEditeurContenu(b);
+    });
+  },
+
+  _lireEditeur() {
+    const container = document.getElementById('consignes-editor-content'); if (!container) return [];
+    const blocs = [];
+    container.querySelectorAll('.consigne-edit-bloc').forEach(blocEl => {
+      const titre = blocEl.querySelector('.consigne-edit-titre')?.value || '';
+      const items = [];
+      blocEl.querySelectorAll('.consigne-edit-item').forEach(inp => { if (inp.value.trim()) items.push(inp.value.trim()); });
+      blocs.push({ titre, items });
+    });
+    return blocs;
+  },
+
+  sauvegarderConsignes() {
+    AppData.params.consignesJury = this._lireEditeur();
+    if (typeof Unsaved !== 'undefined') Unsaved.marquer();
+    if (typeof fermerModal === 'function') fermerModal('modal-consignes');
+    if (typeof notifier === 'function') notifier('Consignes sauvegardées.', 'success');
+  },
+
+  reinitialiserConsignes() {
+    if (!confirm('Remettre les consignes par défaut ?')) return;
+    AppData.params.consignesJury = null;
+    this._renderEditeurContenu(this._getConsignes());
+    notifier('Consignes réinitialisées.', 'info');
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // PARAMÈTRES D'IMPRESSION — modal centrale
+  // ─────────────────────────────────────────────────────────────
+
+  ouvrirParamsImpression() {
+    const cfg = PrintConfig.get();
+
+    // Signataire
+    _setVal('pi-fonction', cfg.fonctionSign);
+    _setVal('pi-nom', cfg.nomSign);
+    _setVal('pi-date', cfg.dateSign);
+
+    // Logo preview
+    _updatePreview('pi-logo-preview', cfg.logoBase64, 'Logo');
+    _updatePreview('pi-sign-preview', cfg.signatureBase64, 'Signature');
+
+    // Options convoc élève
+    _setCheck('pi-ce-sujet',   cfg.convocEleve.afficherSujet);
+    _setCheck('pi-ce-parcours',cfg.convocEleve.afficherParcours);
+    _setCheck('pi-ce-langue',  cfg.convocEleve.afficherLangue);
+    _setCheck('pi-ce-amem',    cfg.convocEleve.afficherAmenagement);
+    _setCheck('pi-ce-binome',  cfg.convocEleve.afficherBinome);
+
+    // Consignes à masquer
+    [0,1,2,3,4].forEach(i => _setCheck(`pi-ce-consigne-${i}`, !(cfg.convocEleve.consignesSuppr||[]).includes(i)));
+
+    // Consignes extra
+    const extraContainer = document.getElementById('pi-ce-extras');
+    if (extraContainer) {
+      extraContainer.innerHTML = '';
+      (cfg.convocEleve.consignesExtra||[]).forEach((txt,i) => _ajouterLigneExtra(extraContainer, txt, i));
+    }
+
+    // Options convoc jury
+    _setCheck('pi-cj-sujet',   cfg.convocJury.afficherSujet);
+    _setCheck('pi-cj-pauses',  cfg.convocJury.afficherPauses);
+    _setCheck('pi-cj-remarque',cfg.convocJury.afficherRemarque);
+    _setVal('pi-cj-remarque-texte', cfg.convocJury.remarqueTexte);
+
+    // Options récap
+    _setCheck('pi-re-sujet',  cfg.recap.afficherSujet);
+    _setCheck('pi-re-langue', cfg.recap.afficherLangue);
+    _setCheck('pi-re-classe', cfg.recap.afficherClasse);
+
+    // Options émargement
+    _setCheck('pi-em-sujet', cfg.emargement.afficherSujet);
+    _setCheck('pi-em-amem',  cfg.emargement.afficherAmem);
+    _setCheck('pi-em-note',  cfg.emargement.colonneNote);
+
+    if (typeof ouvrirModal === 'function') ouvrirModal('modal-params-impression');
+  },
+
+  sauvegarderParamsImpression() {
+    const existant = PrintConfig.get();
+
+    // Logo et signature : garder les valeurs actuelles si pas de nouveau fichier
+    // (les inputs file sont traités par les event listeners dédiés)
+    const cfg = {
+      logoBase64      : existant.logoBase64,
+      signatureBase64 : existant.signatureBase64,
+      fonctionSign    : _getVal('pi-fonction') || 'Principal adjoint',
+      nomSign         : _getVal('pi-nom'),
+      dateSign        : _getVal('pi-date'),
+      convocEleve : {
+        afficherSujet       : _getCheck('pi-ce-sujet'),
+        afficherParcours    : _getCheck('pi-ce-parcours'),
+        afficherLangue      : _getCheck('pi-ce-langue'),
+        afficherAmenagement : _getCheck('pi-ce-amem'),
+        afficherBinome      : _getCheck('pi-ce-binome'),
+        consignesSuppr      : [0,1,2,3,4].filter(i => !_getCheck(`pi-ce-consigne-${i}`)),
+        consignesExtra      : _lireExtras(),
+      },
+      convocJury : {
+        afficherSujet    : _getCheck('pi-cj-sujet'),
+        afficherPauses   : _getCheck('pi-cj-pauses'),
+        afficherRemarque : _getCheck('pi-cj-remarque'),
+        remarqueTexte    : _getVal('pi-cj-remarque-texte'),
+      },
+      recap : {
+        afficherSujet  : _getCheck('pi-re-sujet'),
+        afficherLangue : _getCheck('pi-re-langue'),
+        afficherClasse : _getCheck('pi-re-classe'),
+      },
+      emargement : {
+        afficherSujet : _getCheck('pi-em-sujet'),
+        afficherAmem  : _getCheck('pi-em-amem'),
+        colonneNote   : _getCheck('pi-em-note'),
+      },
+    };
+
+    PrintConfig.set(cfg);
+    if (typeof fermerModal === 'function') fermerModal('modal-params-impression');
+    if (typeof notifier === 'function') notifier('Paramètres d\'impression sauvegardés.', 'success');
   },
 };
 
+// ─────────────────────────────────────────────────────────────
+// Helpers locaux (fonctions utilitaires pour la modal)
+// ─────────────────────────────────────────────────────────────
+
+function _esc2(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function _setVal(id, v)     { const el=document.getElementById(id); if(el) el.value=v||''; }
+function _getVal(id)        { return (document.getElementById(id)?.value||'').trim(); }
+function _setCheck(id, v)   { const el=document.getElementById(id); if(el) el.checked=!!v; }
+function _getCheck(id)      { return !!document.getElementById(id)?.checked; }
+
+function _updatePreview(previewId, src, label) {
+  const el = document.getElementById(previewId);
+  if (!el) return;
+  if (src) {
+    el.innerHTML = `<img src="${src}" alt="${label}" style="max-height:60px;max-width:160px;object-fit:contain;border-radius:4px;border:1px solid #e2e8f0;" />`;
+  } else {
+    el.innerHTML = `<span class="pi-no-image">Aucun fichier chargé</span>`;
+  }
+}
+
+function _ajouterLigneExtra(container, txt, i) {
+  const div = document.createElement('div');
+  div.className = 'pi-extra-row';
+  div.innerHTML = `<span class="consigne-edit-bullet">+</span>
+    <input type="text" class="consigne-edit-item pi-extra-input" value="${_esc2(txt)}" placeholder="Consigne supplémentaire…" />
+    <button class="btn btn-icon btn-del pi-extra-del" title="Supprimer">✕</button>`;
+  div.querySelector('.pi-extra-del').addEventListener('click', () => div.remove());
+  container.appendChild(div);
+}
+
+function _lireExtras() {
+  return [...document.querySelectorAll('.pi-extra-input')].map(i=>i.value.trim()).filter(Boolean);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Init événements de la modal paramètres impression
+// ─────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+
+  // Bouton ouvrir modal params impression
+  document.getElementById('btn-params-impression')?.addEventListener('click', () => Print.ouvrirParamsImpression());
+  document.getElementById('btn-params-impression-sauv')?.addEventListener('click', () => Print.sauvegarderParamsImpression());
+
+  // Upload logo
+  document.getElementById('pi-logo-input')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const b64 = ev.target.result;
+      if (!AppData.params.impression) AppData.params.impression = {};
+      AppData.params.impression.logoBase64 = b64;
+      _updatePreview('pi-logo-preview', b64, 'Logo');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Supprimer logo
+  document.getElementById('pi-logo-del')?.addEventListener('click', () => {
+    if (!AppData.params.impression) AppData.params.impression = {};
+    AppData.params.impression.logoBase64 = null;
+    _updatePreview('pi-logo-preview', null, 'Logo');
+    const inp = document.getElementById('pi-logo-input'); if(inp) inp.value='';
+  });
+
+  // Upload signature
+  document.getElementById('pi-sign-input')?.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const b64 = ev.target.result;
+      if (!AppData.params.impression) AppData.params.impression = {};
+      AppData.params.impression.signatureBase64 = b64;
+      _updatePreview('pi-sign-preview', b64, 'Signature');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Supprimer signature
+  document.getElementById('pi-sign-del')?.addEventListener('click', () => {
+    if (!AppData.params.impression) AppData.params.impression = {};
+    AppData.params.impression.signatureBase64 = null;
+    _updatePreview('pi-sign-preview', null, 'Signature');
+    const inp = document.getElementById('pi-sign-input'); if(inp) inp.value='';
+  });
+
+  // Ajouter une consigne extra
+  document.getElementById('pi-ce-add-extra')?.addEventListener('click', () => {
+    const container = document.getElementById('pi-ce-extras');
+    if (container) _ajouterLigneExtra(container, '', container.children.length);
+  });
+
+  // Toggle afficher/masquer le champ texte de la remarque jury
+  document.getElementById('pi-cj-remarque')?.addEventListener('change', e => {
+    const zone = document.getElementById('pi-cj-remarque-zone');
+    if (zone) zone.style.display = e.target.checked ? '' : 'none';
+  });
+
+  // Éditeur consignes
+  document.getElementById('btn-edit-consignes')?.addEventListener('click', () => Print.ouvrirEditeurConsignes());
+  document.getElementById('btn-consignes-sauvegarder')?.addEventListener('click', () => Print.sauvegarderConsignes());
+  document.getElementById('btn-consignes-reset')?.addEventListener('click', () => Print.reinitialiserConsignes());
+});
+
 window.Print = Print;
+window.PrintConfig = PrintConfig;

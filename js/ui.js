@@ -359,6 +359,16 @@ const UI = {
 
     let htmlGrid = '<div class="affectation-grid">';
 
+    // Pauses actives (même logique que affectation.js) : heure cible + durée
+    const pausesActives = (AppData.params.pauses || [])
+      .filter(p => p.active && p.duree > 0)
+      .map(p => ({
+        cible : AppData.enMinutes(p.heure),
+        duree : parseInt(p.duree, 10),
+        label : `Pause — ${p.heure} (${p.duree} min)`,
+      }))
+      .sort((a,b) => a.cible - b.cible);
+
     parJury.forEach(({ jury, creneaux }) => {
       if (!creneaux.length) return;
       const nbE = creneaux.reduce((s,c)=>s+c.eleveIds.length,0);
@@ -380,10 +390,42 @@ const UI = {
           </div>
           <div class="dnd-drop-zone" data-jury-id="${jury.id}" title="Déposer ici pour placer à la fin"></div>
           <table class="affec-table"><thead>
-            <tr><th class="th-drag" title="Glisser pour déplacer">⠿</th><th>#</th><th>Début</th><th>Fin</th><th>Candidat(s)</th><th>Cl.</th><th>Durée</th><th></th></tr>
+            <tr><th class="th-drag" title="Glisser pour déplacer">⠿</th><th>#</th><th>Début</th><th>Fin</th><th>Candidat(s)</th><th>LV</th><th>Cl.</th><th>Durée</th><th></th></tr>
           </thead><tbody>`;
 
-      creneaux.sort((a,b)=>a.ordre-b.ordre).forEach(c => {
+      // Reconstruction de la timeline pour placer les pauses au bon endroit
+      // On rejoue la même logique adaptative que affectation.js _recalculerTous()
+      const marge    = parseInt(AppData.params.margePassage, 10) || 0;
+      const pausesRestantes = pausesActives.map(p => ({ ...p, insere: false }));
+      let curseur = AppData.enMinutes(jury.heureDebut || AppData.params.heureDebut);
+      const m2h = m => `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+
+      creneaux.sort((a,b)=>a.ordre-b.ordre).forEach((c, i) => {
+
+        // ── Détecter les pauses à insérer AVANT ce créneau ──────
+        for (const pause of pausesRestantes) {
+          if (pause.insere) continue;
+          const doitInserer =
+            (i > 0 && curseur >= pause.cible) ||
+            (curseur < pause.cible && (curseur + c.duree) > pause.cible);
+          if (doitInserer) {
+            const heureDebutPause = m2h(curseur);
+            const heureFinPause   = m2h(curseur + pause.duree);
+            htmlGrid += `
+              <tr class="pause-row" aria-label="Pause">
+                <td class="pause-cell-drag"></td>
+                <td class="pause-cell-icon">☕</td>
+                <td class="pause-cell-heure">${heureDebutPause}</td>
+                <td class="pause-cell-heure">${heureFinPause}</td>
+                <td class="pause-cell-label" colspan="4">${escHtml(pause.label)}</td>
+                <td class="pause-cell-actions"></td>
+              </tr>`;
+            curseur += pause.duree;
+            pause.insere = true;
+          }
+        }
+
+        // ── Ligne du créneau ─────────────────────────────────────
         const nomsHtml = c.eleveIds.map(id => {
           const e = AppData.getEleve(id); if(!e) return '?';
           const f = [];
@@ -391,21 +433,34 @@ const UI = {
           if (e.prioritaire)  f.push('<span class="badge badge-prio" title="Prioritaire">P</span>');
           return `<span class="eleve-nom">${escHtml(e.nom)} ${escHtml(e.prenom)}</span>${f.join('')}`;
         }).join('<br/>');
-        const classes = c.eleveIds.map(id=>AppData.getEleve(id)?.classe||'').filter(Boolean).join('/');
-        const flagBin = c.isBinome ? '<span class="badge badge-duo">Binôme</span>' : '';
+
+        // Langues vivantes des élèves du créneau (badges)
+        const languesHtml = c.eleveIds.map(id => {
+          const e = AppData.getEleve(id);
+          return e && e.langue
+            ? `<span class="badge badge-langue badge-langue-sm">${escHtml(e.langue)}</span>`
+            : '<span class="lv-vide" title="Sans LV">—</span>';
+        }).join('<br/>');
+
+        const classes  = c.eleveIds.map(id=>AppData.getEleve(id)?.classe||'').filter(Boolean).join('/');
+        const flagBin  = c.isBinome ? '<span class="badge badge-duo">Binôme</span>' : '';
 
         htmlGrid += `
           <tr class="dnd-row" draggable="true" data-creneau-idx="${c._idx}" data-jury-id="${jury.id}">
             <td class="td-drag" title="Glisser pour déplacer">⠿</td>
             <td class="text-center"><span class="ordre-badge">${c.ordre}</span></td>
             <td>${c.heureDebut}</td><td>${c.heureFin}</td>
-            <td>${nomsHtml}</td><td>${escHtml(classes)}</td>
+            <td>${nomsHtml}</td>
+            <td class="td-langue">${languesHtml}</td>
+            <td>${escHtml(classes)}</td>
             <td>${c.duree} min ${flagBin}</td>
             <td class="col-actions">
               <button class="btn btn-icon btn-edit" data-action="deplacer-creneau" data-idx="${c._idx}" title="Déplacer (modal)">⇄</button>
               <button class="btn btn-icon btn-del"  data-action="del-creneau"      data-idx="${c._idx}" title="Supprimer">🗑</button>
             </td>
           </tr>`;
+
+        curseur += c.duree + marge;
       });
 
       htmlGrid += `</tbody></table></div>`;

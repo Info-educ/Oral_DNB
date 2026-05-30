@@ -211,34 +211,41 @@
           <div class="section-header">
             <div>
               <h2 class="section-title">Génération des documents</h2>
-              <p class="section-desc">Tous les documents sont générés localement. Aucune donnée n'est transmise.</p>
+              <p class="section-desc">Tous les documents sont générés localement dans votre navigateur. Aucune donnée n'est transmise.</p>
             </div>
+            <button class="btn btn-outline" id="btn-params-impression" title="Logo, signataire, date, options par document">
+              🎨 Paramètres d'impression
+            </button>
           </div>
+
           <div class="impressions-grid">
             <div class="impression-card">
               <div class="impression-icon">📄</div>
-              <div class="impression-body"><h3>Convocations élèves</h3><p>Une page par candidat avec heure, salle, durée et consignes.</p></div>
+              <div class="impression-body"><h3>Convocations élèves</h3><p>Une page par candidat avec heure, salle, durée et consignes personnalisables.</p></div>
               <button class="btn btn-primary" id="btn-print-convoc-eleves">🖨 Imprimer</button>
             </div>
             <div class="impression-card">
               <div class="impression-icon">👨‍🏫</div>
-              <div class="impression-body"><h3>Convocations jurys</h3><p>Planning complet de chaque jury avec particularités des candidats.</p></div>
+              <div class="impression-body"><h3>Convocations jurys</h3><p>Planning complet de chaque jury avec co-jurys, sujet et particularités.</p></div>
               <button class="btn btn-primary" id="btn-print-convoc-jurys">🖨 Imprimer</button>
             </div>
             <div class="impression-card">
               <div class="impression-icon">📋</div>
-              <div class="impression-body"><h3>Récapitulatif candidats</h3><p>Tous les élèves classés par jury avec horaires.</p></div>
+              <div class="impression-body"><h3>Récapitulatif candidats</h3><p>Tous les élèves classés par jury avec horaires, langue et sujet.</p></div>
               <button class="btn btn-primary" id="btn-print-recap">🖨 Imprimer</button>
             </div>
             <div class="impression-card">
               <div class="impression-icon">✍</div>
-              <div class="impression-body"><h3>Feuille d'émargement</h3><p>Tableau de signatures par jury avec zone certification.</p></div>
+              <div class="impression-body"><h3>Feuille d'émargement</h3><p>Tableau de signatures par jury avec grande zone de signature candidat.</p></div>
               <button class="btn btn-primary" id="btn-print-emargement">🖨 Imprimer</button>
             </div>
             <div class="impression-card">
               <div class="impression-icon">📌</div>
-              <div class="impression-body"><h3>Consignes jury</h3><p>Rappels réglementaires, durées, notation, conduite à tenir.</p></div>
-              <button class="btn btn-primary" id="btn-print-consignes">🖨 Imprimer</button>
+              <div class="impression-body"><h3>Consignes jury</h3><p>Rappels réglementaires, durées, notation, conduite à tenir. <strong>Modifiables</strong> depuis l'interface.</p></div>
+              <div class="impression-card-actions">
+                <button class="btn btn-outline" id="btn-edit-consignes">✏ Modifier</button>
+                <button class="btn btn-primary" id="btn-print-consignes">🖨 Imprimer</button>
+              </div>
             </div>
             <div class="impression-card impression-card-export">
               <div class="impression-icon">📊</div>
@@ -591,7 +598,161 @@
     </div>
   </dialog>
 
-  <div class="modal-backdrop" id="modal-backdrop" hidden aria-hidden="true"></div>
+  
+  <!-- MODAL Paramètres d'impression -->
+  <dialog class="modal modal-wide modal-pi" id="modal-params-impression" aria-labelledby="modal-pi-title">
+    <div class="modal-inner modal-pi-inner">
+      <header class="modal-header">
+        <h3 id="modal-pi-title">🎨 Paramètres d'impression</h3>
+        <button class="modal-close" aria-label="Fermer" data-close="modal-params-impression">✕</button>
+      </header>
+
+      <div class="modal-form pi-form">
+
+        <!-- ── IDENTITÉ DOCUMENTS ──────────────────────────────── -->
+        <div class="pi-section">
+          <h4 class="pi-section-titre">🏫 Identité des documents</h4>
+          <div class="pi-grid-2">
+
+            <!-- Logo -->
+            <div class="pi-field-group">
+              <label class="pi-label">Logo de l'établissement</label>
+              <div class="pi-upload-row">
+                <label class="btn btn-outline btn-sm pi-upload-btn" title="Importer un logo PNG/JPG">
+                  📷 Choisir un fichier
+                  <input type="file" id="pi-logo-input" accept="image/png,image/jpeg,image/svg+xml" hidden />
+                </label>
+                <button class="btn btn-icon btn-del" id="pi-logo-del" title="Supprimer le logo">🗑</button>
+              </div>
+              <div id="pi-logo-preview" class="pi-preview"><span class="pi-no-image">Aucun fichier chargé</span></div>
+              <p class="pi-hint">PNG, JPG ou SVG — apparaîtra en haut à gauche de tous les documents.</p>
+            </div>
+
+            <!-- Signataire -->
+            <div class="pi-field-group">
+              <label class="pi-label">Signataire des convocations</label>
+              <label class="form-label" style="margin-top:.5rem">Fonction</label>
+              <select id="pi-fonction" class="form-input">
+                <option value="Principal">Principal</option>
+                <option value="Principal adjoint">Principal adjoint</option>
+                <option value="Proviseur">Proviseur</option>
+                <option value="Proviseur adjoint">Proviseur adjoint</option>
+              </select>
+              <label class="form-label" style="margin-top:.5rem">Nom et prénom</label>
+              <input type="text" id="pi-nom" class="form-input" placeholder="Ex : Marie DUPONT" />
+              <label class="form-label" style="margin-top:.5rem">Date de signature</label>
+              <input type="date" id="pi-date" class="form-input" />
+            </div>
+
+            <!-- Signature -->
+            <div class="pi-field-group">
+              <label class="pi-label">Signature (image PNG)</label>
+              <div class="pi-upload-row">
+                <label class="btn btn-outline btn-sm pi-upload-btn">
+                  ✍ Choisir une signature
+                  <input type="file" id="pi-sign-input" accept="image/png,image/jpeg" hidden />
+                </label>
+                <button class="btn btn-icon btn-del" id="pi-sign-del" title="Supprimer la signature">🗑</button>
+              </div>
+              <div id="pi-sign-preview" class="pi-preview"><span class="pi-no-image">Aucun fichier chargé</span></div>
+              <p class="pi-hint">Apparaîtra à côté du nom du signataire sur les convocations élèves.</p>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ── CONVOCATIONS ÉLÈVES ────────────────────────────── -->
+        <div class="pi-section">
+          <h4 class="pi-section-titre">📄 Convocations élèves — informations à afficher</h4>
+          <div class="pi-grid-2">
+            <div>
+              <p class="pi-sub-label">Informations candidat</p>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-sujet" />Afficher le sujet préparé</label>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-parcours" />Afficher le parcours choisi</label>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-langue" />Afficher la langue vivante</label>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-amem" />Afficher les aménagements</label>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-binome" />Afficher le partenaire de binôme</label>
+            </div>
+            <div>
+              <p class="pi-sub-label">Consignes à inclure (décochez pour masquer)</p>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-consigne-0" />Se présenter à l'heure de convocation</label>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-consigne-1" />Apporter son exposé préparé</label>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-consigne-2" />Clés USB interdites / présentation informatique</label>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-consigne-3" />Téléphone éteint et rangé</label>
+              <label class="checkbox-label"><input type="checkbox" id="pi-ce-consigne-4" />Aucun document fourni par le jury</label>
+              <p class="pi-sub-label" style="margin-top:.75rem">Consignes supplémentaires</p>
+              <div id="pi-ce-extras"></div>
+              <button class="btn btn-outline btn-sm" id="pi-ce-add-extra" style="margin-top:.4rem">+ Ajouter une consigne</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── CONVOCATIONS JURYS ────────────────────────────── -->
+        <div class="pi-section">
+          <h4 class="pi-section-titre">👨‍🏫 Convocations jurys — informations à afficher</h4>
+          <label class="checkbox-label"><input type="checkbox" id="pi-cj-sujet" />Afficher la colonne Sujet / Parcours</label>
+          <label class="checkbox-label"><input type="checkbox" id="pi-cj-pauses" />Afficher les pauses dans le bandeau</label>
+          <label class="checkbox-label"><input type="checkbox" id="pi-cj-remarque" />Afficher la remarque de bas de page</label>
+          <div id="pi-cj-remarque-zone" style="margin-top:.5rem">
+            <label class="form-label">Texte de la remarque</label>
+            <textarea id="pi-cj-remarque-texte" class="form-input" rows="3" style="resize:vertical"></textarea>
+          </div>
+        </div>
+
+        <!-- ── RÉCAPITULATIF ─────────────────────────────────── -->
+        <div class="pi-section">
+          <h4 class="pi-section-titre">📋 Récapitulatif — colonnes à afficher</h4>
+          <label class="checkbox-label"><input type="checkbox" id="pi-re-classe" />Classe</label>
+          <label class="checkbox-label"><input type="checkbox" id="pi-re-langue" />Langue vivante</label>
+          <label class="checkbox-label"><input type="checkbox" id="pi-re-sujet" />Sujet préparé</label>
+        </div>
+
+        <!-- ── FEUILLE D'ÉMARGEMENT ──────────────────────────── -->
+        <div class="pi-section">
+          <h4 class="pi-section-titre">✍ Feuille d'émargement — colonnes à afficher</h4>
+          <label class="checkbox-label"><input type="checkbox" id="pi-em-amem" />Particularités (tiers-temps, prioritaire…)</label>
+          <label class="checkbox-label"><input type="checkbox" id="pi-em-sujet" />Sujet préparé</label>
+          <label class="checkbox-label"><input type="checkbox" id="pi-em-note" />Colonne « Note jury »</label>
+        </div>
+
+      </div><!-- fin pi-form -->
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" data-close="modal-params-impression">Annuler</button>
+        <button type="button" class="btn btn-primary" id="btn-params-impression-sauv">💾 Sauvegarder</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- MODAL Consignes jury (éditeur) -->
+  <dialog class="modal modal-wide modal-consignes" id="modal-consignes" aria-labelledby="modal-consignes-title">
+    <div class="modal-inner modal-consignes-inner">
+      <header class="modal-header">
+        <h3 id="modal-consignes-title">✏ Modifier les consignes jury</h3>
+        <button class="modal-close" aria-label="Fermer" data-close="modal-consignes">✕</button>
+      </header>
+
+      <div class="modal-form consignes-editor-wrap">
+        <p class="consignes-editor-info">
+          Modifiez les blocs ci-dessous. Ces consignes seront imprimées sur la fiche jury et sauvegardées dans votre session JSON.
+        </p>
+        <div id="consignes-editor-content" class="consignes-editor-content">
+          <!-- Généré dynamiquement par Print.ouvrirEditeurConsignes() -->
+        </div>
+      </div>
+
+      <div class="modal-footer consignes-editor-footer">
+        <button type="button" class="btn btn-outline" id="btn-consignes-reset" title="Revenir aux consignes par défaut">
+          ↺ Réinitialiser
+        </button>
+        <div style="flex:1"></div>
+        <button type="button" class="btn btn-outline" data-close="modal-consignes">Annuler</button>
+        <button type="button" class="btn btn-primary" id="btn-consignes-sauvegarder">💾 Sauvegarder</button>
+      </div>
+    </div>
+  </dialog>
+
+<div class="modal-backdrop" id="modal-backdrop" hidden aria-hidden="true"></div>
 
   <script src="js/data.js?v=13"></script>
   <script src="js/ui.js?v=13"></script>
@@ -637,6 +798,11 @@
     majRecap();
     document.getElementById('form-params')?.addEventListener('submit', () => setTimeout(majRecap, 100));
 
+
+    // Éditeur de consignes jury
+    document.getElementById('btn-edit-consignes')?.addEventListener('click', () => Print.ouvrirEditeurConsignes());
+    document.getElementById('btn-consignes-sauvegarder')?.addEventListener('click', () => Print.sauvegarderConsignes());
+    document.getElementById('btn-consignes-reset')?.addEventListener('click', () => Print.reinitialiserConsignes());
     // Alias export Excel depuis impressions
     const alias = document.getElementById('btn-export-xlsx-impressions');
     if (alias) alias.addEventListener('click', () => document.getElementById('btn-export-xlsx').click());

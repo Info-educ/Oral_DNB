@@ -225,19 +225,41 @@ const Affectation = {
   },
 
   // ──────────────────────────────────────────────────────────────
-  // PHASE 2 — TRI
+  // PHASE 2 — TRI avec mélange intra-strate
+  //
+  // Contraintes absolues maintenues :
+  //   1. Prioritaires TOUJOURS en premier
+  //   2. Aménagements (tiers-temps) juste après les prioritaires
+  //   3. Dans chaque strate : mélange aléatoire (Fisher-Yates)
+  //      → les classes sont entremêlées, pas de bloc 3A puis 3B puis 3D
   // ──────────────────────────────────────────────────────────────
 
+  /** Mélange un tableau en place (Fisher-Yates). */
+  _shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  },
+
   _trierGroupes(groupes) {
-    return [...groupes].sort((a,b) => {
-      if (a.prioritaire !== b.prioritaire) return a.prioritaire ? -1 : 1;
-      const aAm = a.eleveIds.some(id => AppData.getEleve(id)?.amenagement);
-      const bAm = b.eleveIds.some(id => AppData.getEleve(id)?.amenagement);
-      if (aAm !== bAm) return aAm ? -1 : 1;
-      const nomA = AppData.getEleve(a.eleveIds[0])?.nom || '';
-      const nomB = AppData.getEleve(b.eleveIds[0])?.nom || '';
-      return nomA.localeCompare(nomB, 'fr');
+    // Strate 1 : prioritaires avec amenagement
+    // Strate 2 : prioritaires sans amenagement
+    // Strate 3 : non-prioritaires avec amenagement
+    // Strate 4 : non-prioritaires sans amenagement
+    // Chaque strate est melangee aleatoirement.
+    const strates = [[], [], [], []];
+    groupes.forEach(g => {
+      const isPrio = !!g.prioritaire;
+      const isAmem = g.eleveIds.some(id => AppData.getEleve(id)?.amenagement);
+      if      ( isPrio &&  isAmem) strates[0].push(g);
+      else if ( isPrio && !isAmem) strates[1].push(g);
+      else if (!isPrio &&  isAmem) strates[2].push(g);
+      else                         strates[3].push(g);
     });
+    strates.forEach(s => this._shuffle(s));
+    return strates.flat();
   },
 
   // ──────────────────────────────────────────────────────────────
