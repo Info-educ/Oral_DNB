@@ -1669,3 +1669,64 @@ dialog.modal::backdrop { display: none; }
   .som-footer p { margin: 1pt 0; }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   CORRECTIONS Rev.8 — Page blanche, signature, pauses jury
+═══════════════════════════════════════════════════════════════ */
+
+@media print {
+
+  /* FIX page blanche : la sommaire-page n'est jamais la dernière page
+     → elle a déjà page-break-after:always via .print-page → correct.
+     Le vrai problème est Chrome qui ajoute une page vide APRES le dernier
+     .print-page si celui-ci a page-break-after:always.
+     On force avoid sur le dernier enfant de #print-zone. */
+  #print-zone > .print-page:last-child,
+  #print-zone > div:last-child .print-page:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  /* Signature : mini espace si pas d'image (vs grande boite vide) */
+  .print-signature-vide-mini {
+    height: .6cm;
+    display: block;
+  }
+
+  /* Nom du signataire */
+  .convoc-sign-nom {
+    font-weight: bold;
+    font-size: 10pt;
+    margin: 2pt 0;
+  }
+  .convoc-sign-vide {
+    color: #999;
+    font-weight: normal;
+  }
+
+  /* Cachet de l'établissement — boite */
+  .print-cachet-box {
+    width: 4.5cm;
+    height: 2cm;
+    border: 1pt solid #aaa;
+    border-radius: 2pt;
+    margin: .2cm auto 0;
+    display: block;
+  }
+
+  /* Lignes de pause dans le planning jury imprimé */
+  .jury-print-pause-row td {
+    background: #f0f4ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-size: 8.5pt;
+    color: #163566;
+    padding: 3pt 8pt;
+    border-bottom: 1pt solid #c7d2fe;
+    font-style: italic;
+  }
+  .jury-print-pause-label {
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+}
+

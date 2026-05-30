@@ -151,19 +151,31 @@ const Print = {
     const p    = AppData.params;
     const article = cfg.genreSign === 'F' ? 'La' : 'Le';
     const ville = (p.lieuSignature||'').trim() || (p.etablissement||'').split('—')[0].replace(/collège|lycée|école/gi,'').trim() || 'Bagneux';
-    const date  = PrintConfig.formatDateSign(cfg.dateSign);
+
+    // Date de signature : afficher si renseignée, sinon ligne pointillés
+    const dateSignStr = cfg.dateSign
+      ? PrintConfig.formatDateSign(cfg.dateSign)
+      : '___________________________';
+
+    // Nom du signataire : afficher si renseigné, sinon ligne pointillés
+    const nomSignStr = cfg.nomSign
+      ? `<p class="convoc-sign-nom">${this._esc(cfg.nomSign)}</p>`
+      : '<p class="convoc-sign-nom convoc-sign-vide">___________________________</p>';
+
+    // Signature image : afficher si uploadée, sinon espace minimal (pas de grande boîte vide)
     const signatureHtml = cfg.signatureBase64
       ? `<img src="${cfg.signatureBase64}" class="print-signature-img" alt="Signature" />`
-      : '<div class="print-signature-vide"></div>';
+      : '<div class="print-signature-vide-mini"></div>';
 
     return `
       <div class="convoc-footer">
         <div class="convoc-signature">
-          <p>Fait à ${this._esc(ville)}, le ${date}</p>
+          <p>Fait à ${this._esc(ville)}, le ${dateSignStr}</p>
           <p><strong>${article} ${this._esc(cfg.fonctionSign)}</strong></p>
-          ${cfg.nomSign ? `<p>${this._esc(cfg.nomSign)}</p>` : ''}
+          ${nomSignStr}
           ${signatureHtml}
           <p class="print-cachet-label">Cachet de l'établissement :</p>
+          <div class="print-cachet-box"></div>
         </div>
       </div>`;
   },
@@ -463,11 +475,42 @@ const Print = {
       const hFinale = creneaux[creneaux.length-1].heureFin;
       const nbCand  = creneaux.reduce((s,c)=>s+c.eleveIds.length,0);
 
-      const pausesTexte = cfg.afficherPauses
-        ? ((AppData.params.pauses||[]).filter(p=>p.active&&p.duree>0).map(p=>`${p.heure} (${p.duree} min)`).join(', ') || 'Aucune')
-        : null;
+      // Pauses : toujours affichées dans le bandeau de la convocation jury
+      const pausesActivesList = (AppData.params.pauses||[]).filter(p=>p.active&&p.duree>0);
+      const pausesTexte = pausesActivesList.map(p=>`${p.heure} (${p.duree} min)`).join(', ') || 'Aucune';
+      // Préparer les pauses pour insertion dans le planning (même logique que la vue web)
+      const pausesPlan = pausesActivesList
+        .map(p => ({ cible: AppData.enMinutes(p.heure), duree: parseInt(p.duree,10), label: `Pause — ${p.heure} (${p.duree} min)`, insere: false }))
+        .sort((a,b) => a.cible - b.cible);
 
-      const lignes = creneaux.map(c => {
+      const marge = parseInt(AppData.params.margePassage, 10) || 0;
+      const m2h   = m => `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+      let curseurP = AppData.enMinutes(jury.heureDebut || AppData.params.heureDebut);
+      const pausesPlanJury = pausesPlan.map(p => ({ ...p, insere: false }));
+      const thSujetCols = cfg.afficherSujet ? 1 : 0;
+      const nbCols = 5 + thSujetCols;
+
+      let lignes = '';
+      creneaux.forEach((c, ci) => {
+        // Insérer les lignes de pause au bon moment (même algorithme que la vue web)
+        for (const pause of pausesPlanJury) {
+          if (pause.insere) continue;
+          const doitInserer =
+            (ci > 0 && curseurP >= pause.cible) ||
+            (curseurP < pause.cible && (curseurP + c.duree) > pause.cible);
+          if (doitInserer) {
+            lignes += `<tr class="jury-print-pause-row">
+              <td class="text-center">☕</td>
+              <td><strong>${m2h(curseurP)}</strong></td>
+              <td>${m2h(curseurP + pause.duree)}</td>
+              <td class="text-center">${pause.duree} min</td>
+              <td colspan="${1 + thSujetCols}" class="jury-print-pause-label">${this._esc(pause.label)}</td>
+            </tr>`;
+            curseurP += pause.duree;
+            pause.insere = true;
+          }
+        }
+
         const candidats = c.eleveIds.map(id => {
           const e = AppData.getEleve(id); if (!e) return { html:'?', sujet:'' };
           const flags = [];
@@ -482,7 +525,7 @@ const Print = {
         const sujetCell = cfg.afficherSujet
           ? `<td class="jury-sujet-cell">${candidats.map(ca=>this._esc(ca.sujet)).filter(Boolean).join('<br/>')}</td>`
           : '';
-        return `<tr>
+        lignes += `<tr>
           <td class="text-center"><strong>${c.ordre}</strong></td>
           <td><strong>${c.heureDebut}</strong></td>
           <td>${c.heureFin}</td>
@@ -490,7 +533,8 @@ const Print = {
           <td>${candidats.map(ca=>ca.html).join('<hr class="cand-sep"/>')}</td>
           ${sujetCell}
         </tr>`;
-      }).join('');
+        curseurP += c.duree + marge;
+      });
 
       const thSujet = cfg.afficherSujet ? '<th>Sujet / Parcours</th>' : '';
 
@@ -504,7 +548,7 @@ const Print = {
             <div class="jury-info-item"><span class="label">Début</span><strong>${hDebut}</strong></div>
             <div class="jury-info-item"><span class="label">Fin prévisionnelle</span><strong>${hFinale}</strong></div>
             <div class="jury-info-item"><span class="label">Candidats</span><strong>${nbCand}</strong></div>
-            ${pausesTexte !== null ? `<div class="jury-info-item"><span class="label">Pause(s)</span><span>${this._esc(pausesTexte)}</span></div>` : ''}
+            <div class="jury-info-item"><span class="label">Pause(s)</span><span>${this._esc(pausesTexte)}</span></div>
           </div>
           <h3 class="print-section-titre">Planning des passages</h3>
           <table class="print-table">
