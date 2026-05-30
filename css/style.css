@@ -398,12 +398,17 @@ dialog.modal::backdrop { display: none; }
 #print-zone { display: none; }
 
 @media print {
-  /* Masquer TOUTE l'interface — seul #print-zone doit s'imprimer */
-  body > *:not(#print-zone) { display: none !important; }
-  .app-layout, .sidebar, .main-wrapper, .app-main,
-  .modal-backdrop, dialog.modal, #notif-zone { display: none !important; }
+  /* Masquer l'interface — seul #print-zone s'imprime */
+  .sidebar, .modal-backdrop, dialog.modal, #notif-zone,
+  .tab-panel, .unsaved-banner, .params-bandeau,
+  .calc-panel, .stats-bar, .section-header,
+  .toolbar, .counter-bar, .table-wrapper,
+  .affectation-grid, .impressions-grid, .rgpd-banner { display: none !important; }
 
-  #print-zone { display: block !important; }
+  .app-layout   { display: block; }
+  .main-wrapper { display: block; }
+  .app-main     { display: block; padding: 0; max-width: 100%; }
+  #print-zone   { display: block !important; }
 
   body { background: white; font-size: 10.5pt; color: #000; font-family: Arial, sans-serif; }
 
