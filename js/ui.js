@@ -837,6 +837,8 @@ function initParams() {
     notifier('Paramètres enregistrés.','success');
     UI._renderCalculateur();
     UI._updateBandeauParams();
+    // Naviguer vers l'onglet Jurys après enregistrement
+    document.querySelector('[data-tab="jurys"]')?.click();
   });
 }
 
@@ -994,4 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initImportExportJSON(); initImportExcel(); initExportExcel();
   initImpressions();
   renderJurys(); renderEleves(); UI.renderAffectation();
+  // Ouvrir automatiquement les paramètres généraux au démarrage
+  chargerParams();
+  ouvrirModal('modal-params');
 });

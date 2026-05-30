@@ -1,13 +1,16 @@
 /**
  * print.js — Génération et impression des documents officiels
- * Oral DNB · Collège Joliot Curie  —  Rev.8
+ * Oral DNB · Collège Joliot Curie  —  Rev.9
  *
- * Corrections Rev.8 (audit senior) :
- *   [BUG-5] _lireEditeur() filtrait les items vides en édition intermédiaire
- *           → le filtre est maintenant appliqué UNIQUEMENT à la sauvegarde finale
- *           → les lignes vides restent visibles pendant l'édition (comportement attendu)
+ * Corrections Rev.9 :
+ *   [BUG-BLANC] Page blanche en début d'impression (Chrome/Edge Windows)
+ *              → _imprimer() utilise désormais window.open() pour ouvrir une
+ *                fenêtre dédiée contenant uniquement les pages à imprimer.
+ *              → Plus de conflit entre le DOM de l'application et #print-zone.
+ *              → Fallback automatique si popup bloqué (comportement Rev.8).
  *
- * Conservé de Rev.6 :
+ * Conservé de Rev.8 :
+ *   [BUG-5] _lireEditeur() : filtre vides uniquement à la sauvegarde finale
  *   — _esc2 remplacée par window.escHtml (défini dans ui.js)
  *   — Doublon listener btn-consignes-reset supprimé (une seule déclaration)
  */
@@ -84,11 +87,793 @@ const Print = {
   // ─────────────────────────────────────────────────────────────
 
   _imprimer(html) {
-    const zone = document.getElementById('print-zone');
-    if (!zone) { console.error('[Print] #print-zone introuvable'); return; }
-    zone.innerHTML = html;
-    window.print();
-    setTimeout(() => { zone.innerHTML = ''; }, 2000);
+    // ── Rev.9 : impression via window.open ──────────────────────
+    // Raison : injecter dans #print-zone et appeler window.print() sur la page principale
+    // génère systématiquement une première page blanche sous Chrome/Edge (Windows),
+    // car le navigateur réserve une page pour le DOM de l'application avant #print-zone.
+    // Solution : ouvrir une nouvelle fenêtre qui ne contient QUE les pages à imprimer.
+    // ─────────────────────────────────────────────────────────────
+    const cssPages = `@page {
+  margin: 0;        /* les marges sont gérées par .print-page en CSS */
+  size: A4 portrait;
+}
+@page listing-a3 {
+  size: A3 portrait;
+  margin: 1.2cm 1.5cm;
+}
+@page affiche-a4l {
+  size: A4 landscape;
+  margin: 1cm 1.2cm;
+}`;
+    const cssRules = `/* Masquer l'interface — seul #print-zone s'imprime */
+  .sidebar, .modal-backdrop, dialog.modal, #notif-zone,
+  .tab-panel, .unsaved-banner, .params-bandeau,
+  .calc-panel, .stats-bar, .section-header,
+  .toolbar, .counter-bar, .table-wrapper,
+  .affectation-grid, .impressions-grid, .rgpd-banner { display: none !important; }
+
+  .app-layout   { display: block; }
+  .main-wrapper { display: block; }
+  .app-main     { display: block; padding: 0; max-width: 100%; }
+  #print-zone   { display: block !important; }
+
+  body { background: white; font-size: 10.5pt; color: #000; font-family: Arial, sans-serif; }
+
+  .print-page { padding: 1cm 1.5cm; page-break-after: always; }
+  .print-page:last-child { page-break-after: avoid; }
+  .print-header { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1cm; align-items: start; margin-bottom: .5cm; }
+  .print-header-left  { text-align: left; }
+  .print-header-right { text-align: right; }
+  .print-header-center { text-align: center; }
+  .print-etab    { font-size: 9pt; font-weight: bold; text-transform: uppercase; }
+  .print-annee   { font-size: 8pt; color: #555; margin-top: 2pt; }
+  .print-titre   { font-size: 14pt; font-weight: bold; text-transform: uppercase; letter-spacing: .08em; color: #0d2240; }
+  .print-sous-titre { font-size: 10pt; color: #555; }
+  .print-doc-titre  { font-size: 11pt; font-weight: bold; color: #0d2240; }
+  .print-doc-sous   { font-size: 9pt; color: #555; }
+  .print-hr { border: none; border-top: 2px solid #0d2240; margin: .4cm 0; }
+
+  .print-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-top: .3cm; }
+  .print-table th { background: #0d2240 !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 4pt 6pt; text-align: left; font-size: 8pt; }
+  .print-table td { padding: 3.5pt 6pt; border-bottom: 1px solid #ddd; vertical-align: top; }
+  .print-table tr:nth-child(even) td { background: #f8f9fa !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  tr { page-break-inside: avoid; }
+
+  .convoc-bloc-eleve { margin: .5cm 0; padding: .4cm .5cm; border: 2px solid #0d2240; border-radius: 4pt; }
+  .convoc-nom    { font-size: 18pt; font-weight: bold; text-transform: uppercase; color: #0d2240; }
+  .convoc-classe { font-size: 11pt; margin-top: .2cm; }
+  .convoc-badge-amem { background: #fef3c7; border: 1px solid #f59e0b; display: inline-block; padding: 2pt 8pt; border-radius: 3pt; font-size: 9pt; font-weight: bold; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .convoc-binome { font-size: 10pt; margin-top: .2cm; }
+  .convoc-table { width: 100%; border-collapse: collapse; margin: .4cm 0; font-size: 11pt; }
+  .convoc-table th { background: #163566 !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 5pt 8pt; text-align: center; }
+  .convoc-table td { padding: 6pt 8pt; border: 1px solid #ccc; text-align: center; }
+  .convoc-heure-convoc  { font-size: 16pt; font-weight: bold; color: #dc2626; }
+  .convoc-heure-passage { font-size: 14pt; font-weight: bold; }
+  .convoc-consignes-eleve { margin-top: .4cm; font-size: 9pt; }
+  .convoc-consignes-eleve ul { margin-left: .5cm; margin-top: .2cm; }
+  .convoc-consignes-eleve li { margin-bottom: .15cm; }
+  .convoc-footer { margin-top: .6cm; display: flex; justify-content: flex-end; }
+  .convoc-signature { font-size: 9pt; text-align: center; }
+
+  .jury-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .15cm .5cm; margin: .3cm 0 .4cm; font-size: 9.5pt; }
+  .label { font-weight: bold; color: #374151; }
+  .print-section-titre { font-size: 11pt; font-weight: bold; margin: .4cm 0 .2cm; color: #0d2240; border-bottom: 1px solid #0d2240; padding-bottom: .1cm; }
+  .jury-remarques { margin-top: .4cm; font-size: 8.5pt; color: #555; font-style: italic; border-top: 1px solid #ddd; padding-top: .2cm; }
+
+  .recap-date { font-size: 9pt; color: #555; margin-bottom: .4cm; }
+  .recap-jury-bloc { margin-bottom: .6cm; page-break-inside: avoid; }
+  .recap-jury-titre { background: #163566 !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 4pt 8pt; font-size: 10pt; font-weight: bold; }
+
+  .emarg-ligne { height: 1cm; }
+  .emarg-certif { margin-top: .6cm; padding-top: .3cm; border-top: 1px solid #ccc; font-size: 9pt; }
+  .emarg-sign-jury { display: flex; align-items: center; gap: .5cm; margin-top: .3cm; }
+  .sign-box { border: 1px solid #999; width: 5cm; height: 1.5cm; }
+
+  .consignes-titre { font-size: 12pt; font-weight: bold; color: #0d2240; margin: .4cm 0 .3cm; }
+  .consignes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .4cm; }
+  .consigne-bloc { padding: .3cm .4cm; border: 1px solid #ddd; border-radius: 3pt; page-break-inside: avoid; }
+  .consigne-bloc h4 { font-size: 9.5pt; font-weight: bold; color: #0d2240; margin-bottom: .2cm; }
+  .consigne-bloc ul { margin-left: .4cm; font-size: 8.5pt; }
+  .consigne-bloc li { margin-bottom: .1cm; }
+  .consignes-footer { margin-top: .5cm; padding-top: .3cm; border-top: 1px solid #ddd; font-size: 8.5pt; color: #555; text-align: center; }
+
+/* ── Convocation élève enrichie ─────────────────────────── */
+  .convoc-classe-row {
+    display: flex; gap: 1.5cm; align-items: baseline;
+    font-size: 10.5pt; margin-top: .25cm;
+  }
+  .convoc-langue { font-size: 10pt; }
+  .convoc-amenagements {
+    margin-top: .3cm;
+    display: flex; gap: .3cm; align-items: center; flex-wrap: wrap;
+  }
+  .convoc-amem-titre { font-size: 9pt; font-weight: bold; color: #92400e; }
+  .convoc-badge-amem {
+    background: #fef3c7 !important;
+    border: 1px solid #f59e0b !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    display: inline-block; padding: 2pt 7pt; border-radius: 3pt;
+    font-size: 8.5pt; font-weight: bold; color: #92400e;
+  }
+  .convoc-sujet-bloc {
+    margin: .35cm 0;
+    padding: .3cm .5cm;
+    border-left: 3pt solid #163566;
+    background: #f0f4ff !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    font-size: 9.5pt;
+  }
+  .convoc-sujet-ligne { margin-bottom: .15cm; }
+  .convoc-sujet-label { color: #555; font-weight: normal; }
+
+  /* ── Convocation jury — en-tête co-jurys ────────────────── */
+  .jury-membres-grid {
+    display: flex; gap: .5cm; flex-wrap: wrap;
+    margin: .3cm 0 .25cm;
+    padding: .3cm .5cm;
+    border: 1.5pt solid #0d2240;
+    border-radius: 4pt;
+    background: #f0f4ff !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .jury-membre-bloc { flex: 1; min-width: 5cm; }
+  .jury-membre-num  { font-size: 7.5pt; color: #555; text-transform: uppercase; letter-spacing: .04em; display: block; }
+  .jury-membre-nom  { font-size: 11pt; color: #0d2240; display: block; }
+
+  /* ── Bandeau infos jury (remplace jury-info-grid) ─────────── */
+  .jury-info-bandeau {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .15cm .4cm;
+    margin: .2cm 0 .35cm;
+    font-size: 9pt;
+  }
+  .jury-info-bandeau.small { grid-template-columns: repeat(4, 1fr); }
+  .jury-info-item { display: flex; flex-direction: column; }
+  .jury-info-item .label { font-size: 7.5pt; color: #777; text-transform: uppercase; letter-spacing: .03em; }
+  .jury-info-item strong { font-size: 9.5pt; color: #0d2240; }
+
+  /* ── Sujet dans le planning jury ─────────────────────────── */
+  .jury-sujet-cell { font-size: 8pt; color: #333; max-width: 120pt; }
+  .jury-cand-nom   { font-weight: bold; font-size: 9pt; display: block; }
+  .jury-cand-classe { font-size: 8pt; color: #555; margin-right: 4pt; }
+  .cand-sep { border: none; border-top: .5pt dotted #ccc; margin: 2pt 0; }
+  .print-badge-amem { font-size: 7pt; background: #fef3c7 !important; color: #92400e; padding: 1pt 4pt; border-radius: 2pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-badge-prio { font-size: 7pt; background: #fee2e2 !important; color: #991b1b; padding: 1pt 4pt; border-radius: 2pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-badge-bin  { font-size: 7pt; background: #f0fdf4 !important; color: #166534; padding: 1pt 4pt; border-radius: 2pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* ── Feuille d'émargement — grande zone signature ─────────── */
+  .emarg-table { font-size: 9pt; }
+  .emarg-ligne { height: 2cm !important; }   /* hauteur doublée */
+  .emarg-heure   { font-weight: bold; font-size: 9.5pt; white-space: nowrap; }
+  .emarg-nom     { font-size: 9.5pt; vertical-align: middle; }
+  .emarg-prenom  { font-weight: normal; font-size: 8.5pt; color: #444; }
+  .emarg-amem    { font-size: 8pt; color: #92400e; }
+  .emarg-sujet   { font-size: 7.5pt; color: #333; max-width: 90pt; }
+  .emarg-signature-cell { vertical-align: middle; padding: 4pt 6pt !important; }
+  .emarg-sign-zone {
+    width: 100%;
+    height: 1.6cm;
+    border: 1pt solid #bbb;
+    border-radius: 2pt;
+  }
+
+  /* Zone signature jury en bas de page */
+  .emarg-sign-jury-row { display: flex; gap: .5cm; align-items: flex-end; margin-top: .3cm; }
+  .emarg-sign-jury-item { display: flex; flex-direction: column; gap: .2cm; font-size: 8.5pt; }
+  .emarg-sign-jury-item.large { flex: 1; }
+  .sign-box-date { width: 3cm; height: 1.2cm; border: 1pt solid #999; border-radius: 2pt; }
+  .sign-box-jury { width: 100%; height: 2cm;  border: 1pt solid #999; border-radius: 2pt; }
+
+  /* ── Recap sujet ──────────────────────────────────────────── */
+  .recap-sujet { font-size: 7.5pt; color: #444; max-width: 100pt; }
+  .recap-jury-titre { font-size: 10pt; }
+
+  /* ── Consignes intro ─────────────────────────────────────── */
+  .consignes-intro { font-size: 9pt; margin-bottom: .35cm; color: #333; }
+
+/* Déjà défini plus haut : .print-page { padding: 1cm 1.5cm; } */
+  /* On s'assure que body n'ajoute pas de marge supplémentaire */
+  body { margin: 0 !important; padding: 0 !important; }
+  #print-zone { margin: 0 !important; padding: 0 !important; }
+
+  /* ── Logo dans l'en-tête ──────────────────────────────────── */
+  .print-logo {
+    max-height: 1.5cm;
+    max-width: 4cm;
+    object-fit: contain;
+    display: block;
+    margin-bottom: .2cm;
+  }
+  .print-logo-vide { height: 0; display: block; }
+
+  /* ── Signature du signataire ──────────────────────────────── */
+  .print-signature-img {
+    max-height: 1.8cm;
+    max-width: 5cm;
+    object-fit: contain;
+    display: block;
+    margin: .2cm 0;
+  }
+  .print-signature-vide {
+    height: 1.5cm;
+    display: block;
+  }
+  .print-cachet-label {
+    font-size: 8pt;
+    color: #555;
+    margin-top: .4cm;
+  }
+
+  /* ── Pied de convocation aligné à droite ──────────────────── */
+  .convoc-footer {
+    margin-top: .6cm;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .convoc-signature {
+    font-size: 9pt;
+    text-align: center;
+    min-width: 6cm;
+  }
+
+.garde-bandeau {
+    border: 1.5pt solid #163566;
+    border-radius: 4pt;
+    margin-bottom: .5cm;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .garde-row-top {
+    display: flex;
+    align-items: stretch;
+    background: #163566 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    padding: .25cm .4cm;
+    gap: .4cm;
+  }
+
+  .garde-left {
+    display: flex;
+    align-items: center;
+    gap: .3cm;
+    flex: 1.2;
+  }
+  .garde-logo {
+    max-height: 32pt;
+    max-width: 70pt;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+  }
+  .garde-etab {
+    font-size: 9pt;
+    font-weight: bold;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .garde-annee {
+    font-size: 7.5pt;
+    color: rgba(255,255,255,.75) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .garde-center {
+    flex: 2;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .garde-type-epreuve {
+    font-size: 8pt;
+    color: rgba(255,255,255,.8) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .garde-date {
+    font-size: 11pt;
+    font-weight: 900;
+    color: #fde68a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin-top: 1pt;
+  }
+
+  .garde-right {
+    flex: 1.2;
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .garde-doc-type {
+    font-size: 9pt;
+    font-weight: bold;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .garde-edition {
+    font-size: 7pt;
+    color: rgba(255,255,255,.6) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin-top: 2pt;
+  }
+
+  /* Bande de stats */
+  .garde-row-stats {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .3cm;
+    padding: .18cm .4cm;
+    background: #f0f4ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    border-top: 1pt solid #c7d2fe;
+  }
+
+  .garde-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 36pt;
+    padding: 0 .2cm;
+    border-right: .5pt solid #c7d2fe;
+  }
+  .garde-stat:last-of-type { border-right: none; }
+  .garde-stat-val {
+    font-size: 13pt;
+    font-weight: 900;
+    color: #163566;
+    line-height: 1;
+  }
+  .garde-stat-lbl {
+    font-size: 6.5pt;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #64748b;
+    margin-top: 1pt;
+  }
+  .garde-stat-warn .garde-stat-val { color: #dc2626; }
+
+  /* Répartition par classe — inline, à la suite des stats */
+  .garde-classes {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .15cm .3cm;
+    align-items: center;
+    padding-left: .3cm;
+    border-left: .5pt solid #c7d2fe;
+  }
+  .garde-classe-item {
+    font-size: 8pt;
+    color: #1e3a5f;
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    border: .5pt solid #93c5fd;
+    border-radius: 3pt;
+    padding: 1pt 5pt;
+    white-space: nowrap;
+  }
+
+/* Plus de page blanche : le bandeau de garde est inline dans la première page,
+     pas une .print-page séparée. La règle ci-dessous reste en sécurité. */
+  #print-zone > .print-page:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  /* Signature : mini espace si pas d'image (vs grande boite vide) */
+  .print-signature-vide-mini {
+    height: .6cm;
+    display: block;
+  }
+
+  /* Nom du signataire */
+  .convoc-sign-nom {
+    font-weight: bold;
+    font-size: 10pt;
+    margin: 2pt 0;
+  }
+  .convoc-sign-vide {
+    color: #999;
+    font-weight: normal;
+  }
+
+  /* Cachet de l'établissement — boite */
+  .print-cachet-box {
+    width: 4.5cm;
+    height: 2cm;
+    border: 1pt solid #aaa;
+    border-radius: 2pt;
+    margin: .2cm auto 0;
+    display: block;
+  }
+
+  /* Lignes de pause dans le planning jury imprimé */
+  .jury-print-pause-row td {
+    background: #f0f4ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-size: 8.5pt;
+    color: #163566;
+    padding: 3pt 8pt;
+    border-bottom: 1pt solid #c7d2fe;
+    font-style: italic;
+  }
+  .jury-print-pause-label {
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+
+/* ── Sélecteurs de page nommée ─────────────────────────────── */
+  .print-page-a3p { page: listing-a3; }
+  .print-page-a4l { page: affiche-a4l; }
+
+  /* ═══════════════════════════════
+     LISTING ALPHABÉTIQUE (A3)
+  ═══════════════════════════════ */
+
+  /* Listing continu : pas de .print-page, donc pas de page-break-after automatique.
+     La pagination est gérée naturellement par l'imprimante via @page listing-a3. */
+  .listing-page-continue {
+    font-family: Arial, sans-serif;
+    /* Pas de page-break-after — le contenu coule sur autant de feuilles que nécessaire */
+  }
+
+  .listing-header {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    gap: .5cm;
+    align-items: center;
+    border-bottom: 2.5pt solid #163566;
+    padding-bottom: .35cm;
+    margin-bottom: .4cm;
+  }
+  .listing-header-left  { display: flex; align-items: center; gap: .3cm; }
+  .listing-header-center { text-align: center; }
+  .listing-header-right { text-align: right; }
+
+  .listing-logo {
+    max-height: 40pt;
+    max-width: 80pt;
+    object-fit: contain;
+  }
+  .listing-etab {
+    font-size: 9pt;
+    font-weight: bold;
+    color: #163566;
+    display: block;
+  }
+  .listing-annee { font-size: 7.5pt; color: #666; }
+
+  .listing-titre {
+    font-size: 9pt;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .listing-sous-titre {
+    font-size: 13pt;
+    font-weight: 900;
+    color: #163566;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    margin: 2pt 0;
+  }
+  .listing-date {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #dc2626 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .listing-page-info   { font-size: 8pt; color: #555; font-weight: bold; }
+  .listing-range       { font-size: 7.5pt; color: #888; }
+  .listing-total       { font-size: 9pt; font-weight: bold; color: #163566; }
+  .listing-total-label { font-size: 10pt; font-weight: bold; color: #163566; text-align: right; }
+
+  /* Tableau listing continu */
+  .listing-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13pt;
+  }
+  /* Répéter l'en-tête sur chaque page imprimée */
+  .listing-table thead {
+    display: table-header-group;
+  }
+  .listing-table tbody tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .listing-table thead tr {
+    background: #163566 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .listing-table th {
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    padding: 5pt 8pt;
+    font-size: 10pt;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    font-weight: 700;
+    text-align: left;
+  }
+  .listing-th-rang   { width: 28pt; text-align: center; }
+  .listing-th-nom    { width: auto; }
+  .listing-th-classe { width: 55pt; text-align: center; }
+  .listing-th-heure  { width: 75pt; text-align: center; }
+  .listing-th-salle  { width: 55pt; text-align: center; }
+  .listing-th-jury   { width: 140pt; }
+
+  .listing-row td {
+    padding: 5pt 8pt;
+    border-bottom: .5pt solid #e2e8f0;
+    vertical-align: middle;
+    line-height: 1.3;
+  }
+  .listing-row-even td {
+    background: #f8fafc !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .listing-cell-rang   { text-align: center; font-size: 10pt; color: #999; }
+  .listing-cell-nom    { font-size: 13pt; }
+  .listing-cell-nom strong { font-size: 14pt; letter-spacing: .01em; }
+  .listing-cell-classe { text-align: center; font-size: 12pt; font-weight: 600; color: #163566; }
+  .listing-cell-heure  {
+    text-align: center;
+    font-size: 16pt;
+    font-weight: 900;
+    color: #163566;
+    letter-spacing: .03em;
+  }
+  .listing-cell-salle  {
+    text-align: center;
+    font-size: 18pt;
+    font-weight: 900;
+    color: #dc2626 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .listing-cell-jury { font-size: 10pt; color: #444; }
+
+  .listing-badge-amem {
+    display: inline-block;
+    background: #fef3c7 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: #92400e;
+    border: .5pt solid #fcd34d;
+    font-size: 7pt;
+    padding: 1pt 4pt;
+    border-radius: 3pt;
+    margin-left: 4pt;
+    vertical-align: middle;
+  }
+  .listing-badge-prio {
+    display: inline-block;
+    background: #fce7f3 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: #9d174d;
+    border: .5pt solid #f9a8d4;
+    font-size: 7pt;
+    padding: 1pt 4pt;
+    border-radius: 3pt;
+    margin-left: 4pt;
+    vertical-align: middle;
+  }
+
+  /* ═══════════════════════════════
+     AFFICHE PORTE (A4 paysage)
+  ═══════════════════════════════ */
+
+  .affiche-porte {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: calc(210mm - 2cm);  /* hauteur A4 paysage moins marges */
+    overflow: hidden;
+    font-family: 'Arial', sans-serif;
+  }
+
+  /* Bandeau supérieur */
+  .affiche-top-band {
+    display: flex;
+    align-items: center;
+    gap: .5cm;
+    padding: .3cm .4cm;
+    background: #163566 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: white;
+  }
+  .affiche-logo {
+    max-height: 32pt;
+    max-width: 70pt;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+  }
+  .affiche-etab-bloc {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .affiche-etab {
+    font-size: 11pt;
+    font-weight: bold;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .affiche-epreuve {
+    font-size: 8pt;
+    color: rgba(255,255,255,.8) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .affiche-date-band {
+    font-size: 12pt;
+    font-weight: bold;
+    color: #fde68a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    text-align: right;
+  }
+
+  /* Corps principal : SALLE + JURY — occupe tout l'espace disponible */
+  .affiche-corps {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2cm;
+    padding: .5cm .8cm;
+  }
+
+  .affiche-salle-bloc,
+  .affiche-jury-bloc {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .affiche-salle-label,
+  .affiche-jury-label {
+    font-size: 18pt;
+    font-weight: 700;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: #555;
+  }
+
+  .affiche-salle-num {
+    font-size: 140pt;
+    font-weight: 900;
+    line-height: .95;
+    color: #dc2626 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    letter-spacing: -.03em;
+  }
+
+  .affiche-jury-num {
+    font-size: 130pt;
+    font-weight: 900;
+    line-height: .95;
+    color: #163566 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .affiche-langue {
+    font-size: 16pt;
+    font-weight: bold;
+    color: #163566;
+    background: #e0e7ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    padding: 3pt 12pt;
+    border-radius: 4pt;
+    margin-top: 4pt;
+  }
+
+  /* Séparateur vertical entre salle et jury */
+  .affiche-corps::after {
+    content: '';
+    position: absolute;
+    width: 1.5pt;
+    height: 60%;
+    background: #e2e8f0;
+  }
+  /* (pas de position absolute dans print — utiliser border) */
+  .affiche-salle-bloc {
+    border-right: 1.5pt solid #e2e8f0;
+    padding-right: 1.5cm;
+  }
+  .affiche-jury-bloc {
+    padding-left: 1.5cm;
+  }
+
+  /* Bandeau infos bas supprimé à la demande */`;
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) {
+      // Popup bloqué — informer l'utilisateur et fallback ancienne méthode
+      if (typeof notifier === 'function') {
+        notifier(
+          '⚠ Fenêtres popup bloquées. Autorisez les popups pour ce site dans Chrome/Edge : ' +
+          'barre d\'adresse → icône 🔒 → Autoriser les fenêtres pop-up. ' +
+          'Impression de secours lancée sur cette page.',
+          'warning'
+        );
+      }
+      const zone = document.getElementById('print-zone');
+      if (!zone) { console.error('[Print] #print-zone introuvable'); return; }
+      zone.innerHTML = html;
+      window.print();
+      setTimeout(() => { zone.innerHTML = ''; }, 2000);
+      return;
+    }
+
+    win.document.open();
+    win.document.write(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Impression — DNB Oral</title>
+  <style>
+    /* Reset minimal */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: white; font-family: Arial, sans-serif; }
+
+    /* @page rules */
+    ${cssPages}
+
+    /* Toutes les règles @media print, appliquées directement (pas de @media ici,
+       car dans la fenêtre dédiée TOUT est impression) */
+    ${cssRules}
+
+    /* Forcer l'affichage des éléments qui sont display:none dans @media print
+       uniquement à cause du masquage de l'interface principale */
+    #print-zone { display: block !important; }
+    .print-page { display: block; }
+  </style>
+</head>
+<body>
+${html}
+</body>
+</html>`);
+    win.document.close();
+
+    // Attendre le chargement des images (logo, signature) avant d'imprimer
+    win.addEventListener('load', () => {
+      win.focus();
+      win.print();
+      // Fermer la fenêtre après impression (le dialog print est fermé)
+      win.addEventListener('afterprint', () => win.close());
+    });
   },
 
   /** Utilise escHtml exposé par ui.js */
