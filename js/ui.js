@@ -750,6 +750,10 @@ function chargerParams() {
   const p = AppData.params;
   $('#param-etablissement').value = p.etablissement;
   $('#param-annee').value         = p.annee;
+  // Nouveaux champs Rev.7
+  const lieuEl = $('#param-lieu-signature'); if (lieuEl) lieuEl.value = p.lieuSignature || 'Bagneux';
+  const typeEl = $('#param-type-epreuve');   if (typeEl) typeEl.value = p.typeEpreuve   || 'DNB';
+  const dateEl = $('#param-date-epreuve');   if (dateEl) dateEl.value = p.dateEpreuve   || '';
   $('#param-duree-solo').value    = p.dureeSolo;
   $('#param-duree-binome').value  = p.dureeBinome;
   $('#param-heure-debut').value   = p.heureDebut;
@@ -791,9 +795,12 @@ function initParams() {
   $('#form-params').addEventListener('submit', e => {
     e.preventDefault();
     AppData.saveParams({
-      etablissement : $('#param-etablissement').value,
-      annee         : $('#param-annee').value,
-      dureeSolo     : $('#param-duree-solo').value,
+      etablissement  : $('#param-etablissement').value,
+      annee          : $('#param-annee').value,
+      lieuSignature  : ($('#param-lieu-signature')?.value || '').trim(),
+      typeEpreuve    : $('#param-type-epreuve')?.value    || 'DNB',
+      dateEpreuve    : ($('#param-date-epreuve')?.value   || '').trim(),
+      dureeSolo      : $('#param-duree-solo').value,
       dureeBinome   : $('#param-duree-binome').value,
       heureDebut    : $('#param-heure-debut').value,
       heureFin      : $('#param-heure-fin').value,

@@ -111,6 +111,21 @@ const Print = {
       ? `<img src="${cfg.logoBase64}" class="print-logo" alt="Logo établissement" />`
       : '<div class="print-logo-vide"></div>';
 
+    // Libellé de l'épreuve selon le type
+    const typeLabel = (p.typeEpreuve === 'DNB_BLANC')
+      ? 'DIPLÔME NATIONAL DU BREVET &mdash; BLANC'
+      : 'DIPLÔME NATIONAL DU BREVET';
+
+    // Date de l'épreuve (si renseignée)
+    let dateEpreuveHtml = '';
+    if (p.dateEpreuve) {
+      try {
+        const dEpr = new Date(p.dateEpreuve + 'T12:00:00');
+        const dStr = dEpr.toLocaleDateString('fr-FR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+        dateEpreuveHtml = `<div class="print-date-epreuve">${dStr.charAt(0).toUpperCase() + dStr.slice(1)}</div>`;
+      } catch { dateEpreuveHtml = `<div class="print-date-epreuve">${this._esc(p.dateEpreuve)}</div>`; }
+    }
+
     return `
       <div class="print-header">
         <div class="print-header-left">
@@ -119,8 +134,9 @@ const Print = {
           <div class="print-annee">Année scolaire ${this._esc(p.annee)}</div>
         </div>
         <div class="print-header-center">
-          <div class="print-titre">DIPLÔME NATIONAL DU BREVET</div>
+          <div class="print-titre">${typeLabel}</div>
           <div class="print-sous-titre">ORAL</div>
+          ${dateEpreuveHtml}
         </div>
         <div class="print-header-right">
           <div class="print-doc-titre">${titre}</div>
@@ -134,7 +150,7 @@ const Print = {
     const cfg  = PrintConfig.get();
     const p    = AppData.params;
     const article = cfg.genreSign === 'F' ? 'La' : 'Le';
-    const ville = (p.etablissement||'').split('—')[0].replace(/collège|lycée|école/gi,'').trim() || 'Bagneux';
+    const ville = (p.lieuSignature||'').trim() || (p.etablissement||'').split('—')[0].replace(/collège|lycée|école/gi,'').trim() || 'Bagneux';
     const date  = PrintConfig.formatDateSign(cfg.dateSign);
     const signatureHtml = cfg.signatureBase64
       ? `<img src="${cfg.signatureBase64}" class="print-signature-img" alt="Signature" />`
@@ -652,7 +668,10 @@ const Print = {
 
     this._renderEditeurContenu(this._getConsignes());
 
-    if (typeof ouvrirModal === 'function') ouvrirModal('modal-params-impression');
+    if (typeof ouvrirModal === 'function') {
+      // La modal d'impression est supprimée en Rev.7 — le panneau est inline
+      // ouvrirModal('modal-params-impression');
+    }
   },
 
   sauvegarderParamsImpression() {
@@ -700,7 +719,8 @@ const Print = {
     // Sauvegarder les consignes éditées dans la même modal
     AppData.params.consignesJury = this._lireEditeur();
     PrintConfig.set(cfg);
-    if (typeof fermerModal === 'function') fermerModal('modal-params-impression');
+    // Rev.7 : panneau inline, pas de modale à fermer
+    // if (typeof fermerModal === 'function') fermerModal('modal-params-impression');
     if (typeof notifier === 'function') notifier('Paramètres d\'impression sauvegardés.', 'success');
   },
 };
@@ -745,8 +765,20 @@ function _lireExtras() {
 
 document.addEventListener('DOMContentLoaded', () => {
 
-  // Bouton ouvrir modal params impression
-  document.getElementById('btn-params-impression')?.addEventListener('click', () => Print.ouvrirParamsImpression());
+  // ── Toggle panneau paramètres d'impression (Rev.7 — inline, non modal) ──
+  const piToggle = document.getElementById('pi-panel-toggle');
+  const piBody   = document.getElementById('pi-panel-body');
+  const piChevron = document.getElementById('pi-chevron');
+  if (piToggle && piBody) {
+    piToggle.addEventListener('click', () => {
+      const ouvert = piBody.hidden === false;
+      piBody.hidden = ouvert;
+      piToggle.setAttribute('aria-expanded', String(!ouvert));
+      if (piChevron) piChevron.textContent = ouvert ? '▸' : '▾';
+      // Charger les paramètres à la première ouverture
+      if (!ouvert) Print.ouvrirParamsImpression();
+    });
+  }
 
   // Sauvegarder — un seul listener
   document.getElementById('btn-params-impression-sauv')?.addEventListener('click', () => Print.sauvegarderParamsImpression());

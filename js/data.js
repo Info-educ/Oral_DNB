@@ -20,6 +20,9 @@ const AppData = {
   params: {
     etablissement  : 'Collège Joliot Curie — Bagneux',
     annee          : '2025-2026',
+    lieuSignature  : 'Bagneux',
+    typeEpreuve    : 'DNB',           // 'DNB' | 'DNB_BLANC'
+    dateEpreuve    : '',              // ISO date YYYY-MM-DD
     dureeSolo      : 25,
     dureeBinome    : 35,
     convocAvant    : 15,
@@ -686,6 +689,9 @@ const AppData = {
   saveParams(fields) {
     this.params.etablissement = (fields.etablissement||'').trim();
     this.params.annee         = (fields.annee||'').trim();
+    this.params.lieuSignature = (fields.lieuSignature||'').trim();
+    this.params.typeEpreuve   = fields.typeEpreuve || 'DNB';
+    this.params.dateEpreuve   = (fields.dateEpreuve||'').trim();
     this.params.dureeSolo     = parseInt(fields.dureeSolo,  10)||25;
     this.params.dureeBinome   = parseInt(fields.dureeBinome,10)||35;
     // Pauses 1, 2, 3
@@ -704,6 +710,7 @@ const AppData = {
 
   reset() {
     this.params      = { etablissement:'Collège Joliot Curie — Bagneux', annee:'2025-2026',
+                         lieuSignature:'Bagneux', typeEpreuve:'DNB', dateEpreuve:'',
                          dureeSolo:25, dureeBinome:35,
                          pauses:[
                            {active:true, heure:'10:00', duree:15},
