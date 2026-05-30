@@ -1,8 +1,13 @@
 /**
  * print.js — Génération et impression des documents officiels
- * Oral DNB · Collège Joliot Curie  —  Rev.9
+ * Oral DNB · Collège Joliot Curie  —  Rev.10
  *
- * Corrections Rev.9 :
+ * Corrections Rev.10 :
+ *   [PAGE-GARDE] Bandeau de garde = page 1 dédiée, documents à partir de la page 2
+ *              → _bandeauGarde() retourne une .print-page autonome
+ *              → Les 5 méthodes injectent _garde + pages (concaténation directe)
+ *
+ * Corrections Rev.9 (conservées) :
  *   [BUG-BLANC] Page blanche en début d'impression (Chrome/Edge Windows)
  *              → _imprimer() utilise désormais window.open() pour ouvrir une
  *                fenêtre dédiée contenant uniquement les pages à imprimer.
@@ -1031,7 +1036,7 @@ ${html}
       hour:'2-digit', minute:'2-digit'
     });
 
-    return `<div class="garde-bandeau">
+    return `<div class="print-page print-page-garde"><div class="garde-bandeau">
       <div class="garde-row-top">
         <div class="garde-left">
           ${logoHtml}
@@ -1057,7 +1062,7 @@ ${html}
         ${nbNonAff > 0 ? `<div class="garde-stat garde-stat-warn"><span class="garde-stat-val">${nbNonAff}</span><span class="garde-stat-lbl">Non affectés</span></div>` : ''}
         <div class="garde-classes">${colonnesClasses}</div>
       </div>
-    </div>`;
+    </div></div>`;
   },
 
   convocationsEleves() {
@@ -1179,10 +1184,9 @@ ${html}
         </div>`;
     });
 
-    // Bandeau de garde injecté en tête de la première page (pas de page séparée)
+    // Page 1 : garde autonome — Pages suivantes : une convocation par page
     const _garde1 = this._bandeauGarde('Convocations élèves', elevesAffectes.length, elevesAffectes.length);
-    const _pages1 = pages.replace(/(<div class="print-page convocation-eleve">)/, _garde1 + '$1');
-    this._imprimer(_pages1);
+    this._imprimer(_garde1 + pages);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -1309,8 +1313,7 @@ ${html}
     const _nbJurysP = AppData.jurys.filter(j => AppData.affectation.some(c => c.juryId === j.id)).length;
     const _nbElevJ  = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
     const _garde2   = this._bandeauGarde('Convocations jurys', _nbJurysP, _nbElevJ);
-    const _pages2   = pages.replace(/(<div class="print-page convocation-jury">)/, _garde2 + '$1');
-    this._imprimer(_pages2);
+    this._imprimer(_garde2 + pages);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -1374,8 +1377,7 @@ ${html}
     const _nbElevR = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
     const _nbJurR  = AppData.jurys.filter(j => AppData.affectation.some(c => c.juryId === j.id)).length;
     const _garde3  = this._bandeauGarde('Récapitulatif candidats', _nbJurR + 1, _nbElevR);
-    const _html3   = html.replace(/(<div class="print-page recap-page">)/, '$1' + _garde3);
-    this._imprimer(_html3);
+    this._imprimer(_garde3 + html);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -1455,8 +1457,7 @@ ${html}
     const _nbElevE = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
     const _nbPagE  = AppData.jurys.filter(j => AppData.affectation.some(c => c.juryId === j.id)).length;
     const _garde4  = this._bandeauGarde("Feuille d'émargement", _nbPagE, _nbElevE);
-    const _html4   = html.replace(/(<div class="print-page emarg-page">)/, '$1' + _garde4);
-    this._imprimer(_html4);
+    this._imprimer(_garde4 + html);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -1493,8 +1494,7 @@ ${html}
       </div>`;
     const _nbElevC = AppData.affectation.reduce((s,c) => s + c.eleveIds.length, 0);
     const _garde5  = this._bandeauGarde('Consignes jury', 1, _nbElevC);
-    const _html5   = html.replace(/(<div class="print-page consignes-page">)/, '$1' + _garde5);
-    this._imprimer(_html5);
+    this._imprimer(_garde5 + html);
   },
 
   // ─────────────────────────────────────────────────────────────
