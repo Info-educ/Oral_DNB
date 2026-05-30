@@ -1,18 +1,15 @@
 /**
  * affectation.js — Moteur d'affectation automatique
- * Oral DNB · Collège Joliot Curie  —  Rev.6
+ * Oral DNB · Collège Joliot Curie  —  Rev.8
  *
- * Corrections Rev.6 :
+ * Corrections Rev.8 (audit senior) :
+ *   [BUG-3] Fallback langue "fill" supprimé : élève sans langue → jury sans langue UNIQUEMENT
+ *           (conforme à la règle documentée dans data.js)
+ *           Si aucun jury sans langue disponible → signalé comme non-affecté avec avertissement clair
+ *
+ * Conservé de Rev.6 :
  *   — escHtml supprimée (définie dans ui.js, exposée en window.escHtml)
- *   — DnD.reset() remplacé par UI.reset() côté ui.js ; ici pas de DnD
- *
- * Contraintes maintenues :
- *   1. Langue stricte : élève Anglais → jury Anglais uniquement
- *   2. Binômes : même jury + même créneau + dureeBinome
- *   3. Tiers-temps : durée × 4/3 arrondie au multiple de 5 min
- *   4. Prioritaires : premiers créneaux de leur jury
- *   5. Pauses ADAPTATIVES (s'insèrent après le candidat le plus proche)
- *   6. Capacité calculée automatiquement si jury.capacite === 0
+ *   — Toutes les autres contraintes d'affectation maintenues
  */
 
 'use strict';
@@ -241,7 +238,7 @@ const Affectation = {
     const jl = (juryLangue  || '').trim().toLowerCase();
     const el = (eleveLangue || '').trim().toLowerCase();
     if (jl === el) return 'exact';
-    if (jl !== '' && el === '') return 'fill';
+    // 'fill' retiré : plus utilisé en interne (BUG-3 fix)
     return 'incompatible';
   },
 
@@ -274,20 +271,25 @@ const Affectation = {
       return true;
     };
 
-    // Passe 1 : élèves avec langue → jurys de même langue
+    // Passe 1 : élèves avec langue → jurys de même langue (exact)
     avecLangue.forEach(groupe => {
-      const jCompatibles = AppData.jurys.filter(j => this._prioriteLangue(j.langue, groupe.langue) === 'exact');
+      const jCompatibles = AppData.jurys.filter(j => {
+        const jl = (j.langue || '').trim().toLowerCase();
+        const el = (groupe.langue || '').trim().toLowerCase();
+        return jl === el;
+      });
       placerGroupe(groupe, jCompatibles, true);
     });
 
-    // Passe 2 : élèves sans langue → jurys sans langue, puis avec langue
+    // [BUG-3 FIX] Passe 2 : élèves sans langue → jurys sans langue UNIQUEMENT
+    // Conformément à la règle stricte : "jury sans langue → élèves sans langue UNIQUEMENT"
+    // Pas de fallback vers les jurys avec langue (ce serait une violation réglementaire silencieuse)
     sansLangue.forEach(groupe => {
-      const jSansLangue = AppData.jurys.filter(j => this._prioriteLangue(j.langue, '') === 'exact');
+      const jSansLangue = AppData.jurys.filter(j => (j.langue || '').trim() === '');
       if (placerGroupe(groupe, jSansLangue, false)) return;
-      const jAvecLangue = AppData.jurys.filter(j => this._prioriteLangue(j.langue, '') === 'fill');
-      if (placerGroupe(groupe, jAvecLangue, false)) return;
+      // Aucun jury sans langue disponible → signaler clairement
       const noms = groupe.eleveIds.map(id => { const e=AppData.getEleve(id); return e?`${e.nom} ${e.prenom}`:'?'; }).join(', ');
-      avertAffect.push(`Aucun jury disponible pour (sans langue) : ${noms}`);
+      avertAffect.push(`⚠ Aucun jury sans langue vivante disponible pour : ${noms}. Ajoutez un jury sans LV ou augmentez la capacité.`);
     });
 
     return { plannings, avertAffect };
@@ -416,6 +418,10 @@ const Affectation = {
         return `Incompatibilité de langue (élève: ${e.langue||'sans langue'} / jury: ${juryCible.langue||'sans langue'}).`;
       }
     }
+
+    // [BUG-4 FIX] La vérification de capacité est maintenant faite dans ui.js avant l'appel
+    // (dans le handler drop du DnD), ce qui permet d'afficher le message avant le splice.
+    // On conserve ici la logique de déplacement pure.
 
     AppData.affectation.splice(creneauIdx, 1);
     creneau.juryId = juryIdCible;

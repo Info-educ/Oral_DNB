@@ -1,15 +1,18 @@
 /**
  * ui.js — Contrôleur interface utilisateur
- * Oral DNB · Collège Joliot Curie  —  Rev.6
+ * Oral DNB · Collège Joliot Curie  —  Rev.8
  *
- * Corrections Rev.6 :
- *   - escHtml définie ici UNIQUEMENT (supprimée de affectation.js)
- *   - backdrop déclaré dans initModals() pour éviter le null au chargement
- *   - DnD.reset() appelé dans dragend (cancel par Escape ou sortie fenêtre)
- *   - Toggle pauses : une seule logique (classList disabled/active)
- *     chargerParams() utilise la même mécanique que le script inline
- *   - UI._updateBandeauParams() remplace majRecap() inline (plus de doublon)
- *   - Listener btn-export-xlsx-impressions retiré du script inline dans index.html
+ * Corrections Rev.8 (audit senior) :
+ *   [BUG-1] Suppression jury → nettoyage des créneaux fantômes dans affectation[]
+ *   [BUG-2] Suppression élève → nettoyage des créneaux fantômes dans affectation[]
+ *   [BUG-4] deplacerCreneauDnD sans vérification capacité → ajout du contrôle
+ *   [BUG-5] Items vides dans éditeur consignes disparaissent → filtre déplacé en save
+ *
+ * Conservé de Rev.6 :
+ *   - escHtml définie ici UNIQUEMENT
+ *   - backdrop déclaré dans initModals()
+ *   - Toggle pauses unifié
+ *   - UI._updateBandeauParams()
  */
 
 'use strict';
@@ -70,7 +73,7 @@ window.Unsaved = Unsaved;
 // UTILITAIRES
 // ════════════════════════════════════════════════════════════════
 
-/** Échappement HTML — défini ici UNIQUEMENT (retiré de affectation.js) */
+/** Échappement HTML — défini ici UNIQUEMENT */
 function escHtml(str) {
   return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -118,7 +121,6 @@ function initNav() {
 // MODALS
 // ════════════════════════════════════════════════════════════════
 
-// backdrop est initialisé dans initModals() pour garantir que le DOM est prêt
 let _backdrop = null;
 
 function ouvrirModal(id) {
@@ -130,7 +132,6 @@ function ouvrirModal(id) {
 function fermerModal(id) {
   const m = $(`#${id}`); if (!m) return;
   m.close ? m.close() : m.removeAttribute('open');
-  // Masquer le backdrop seulement si aucune autre dialog n'est ouverte
   const autresOuvertes = $$('dialog[open]').length > 0;
   if (_backdrop && !autresOuvertes) _backdrop.hidden = true;
 }
@@ -484,12 +485,20 @@ const UI = {
   _updateStats() {
     const el = $('#stats-affectation'); if (!el) return;
     if (!AppData.affectation.length) { el.textContent=''; return; }
-    const nbAff    = AppData.affectation.reduce((s,c)=>s+c.eleveIds.length,0);
+
+    // [BUG-1/2 FIX] Ne compter que les créneaux dont le jury existe encore
+    // et les élèves qui existent encore
+    const juryIds  = new Set(AppData.jurys.map(j => j.id));
+    const eleveIds = new Set(AppData.eleves.map(e => e.id));
+    const creneauxValides = AppData.affectation.filter(c => juryIds.has(c.juryId));
+    const nbAff    = creneauxValides.reduce((s,c) =>
+      s + c.eleveIds.filter(id => eleveIds.has(id)).length, 0);
     const nbNonAff = AppData.nbEleves() - nbAff;
+
     el.innerHTML = `
       <span class="stat-item">✓ ${nbAff} élève${nbAff>1?'s':''} affecté${nbAff>1?'s':''}</span>
       ${nbNonAff>0?`<span class="stat-item stat-warn">⚠ ${nbNonAff} non affecté${nbNonAff>1?'s':''}</span>`:''}
-      <span class="stat-item">${AppData.affectation.length} créneau${AppData.affectation.length>1?'x':''}</span>
+      <span class="stat-item">${creneauxValides.length} créneau${creneauxValides.length>1?'x':''}</span>
       <span class="stat-item">${AppData.nbJurys()} jury${AppData.nbJurys()>1?'s':''}</span>`;
   },
 
@@ -575,6 +584,22 @@ const UI = {
         }
       }
 
+      // [BUG-4 FIX] Vérification de capacité identique à deplacerCreneau (modal)
+      const creneau = AppData.affectation[DnD.creneauIdx];
+      if (creneau) {
+        const juryCible = AppData.getJury(juryIdCible);
+        if (juryCible) {
+          const dejaDans = AppData.affectation
+            .filter(c => c.juryId === juryIdCible)
+            .reduce((s,c) => s + c.eleveIds.length, 0);
+          if (juryCible.capacite > 0 && dejaDans + creneau.eleveIds.length > juryCible.capacite * 1.2) {
+            DnD.reset();
+            notifier(`Jury "${juryCible.nom}" déjà très chargé (${dejaDans}/${juryCible.capacite}). Déplacement annulé.`, 'warning', 5000);
+            return;
+          }
+        }
+      }
+
       const err = Affectation.deplacerCreneauDnD(DnD.creneauIdx, juryIdCible, avantCreneauIdx);
       DnD.reset();
 
@@ -589,8 +614,6 @@ const UI = {
 
     // ── Fin du glisser (annulation, ex. Escape ou sortie fenêtre) ─
     container.addEventListener('dragend', () => {
-      // dragend se déclenche toujours après drop ou en cas d'annulation
-      // On nettoie systématiquement (DnD.reset est idempotent)
       DnD.reset();
     });
   },
@@ -736,7 +759,6 @@ function peuplerFiltreLangues() {
 // PARAMÈTRES — toggle pauses unifié
 // ════════════════════════════════════════════════════════════════
 
-/** Active ou désactive visuellement un bloc de pause */
 function _togglePauseBloc(n, actif) {
   const fields = document.getElementById(`pause${n}-fields`);
   const bloc   = document.getElementById(`param-pause${n}-active`)?.closest('.pause-bloc');
@@ -750,7 +772,6 @@ function chargerParams() {
   const p = AppData.params;
   $('#param-etablissement').value = p.etablissement;
   $('#param-annee').value         = p.annee;
-  // Nouveaux champs Rev.7
   const lieuEl = $('#param-lieu-signature'); if (lieuEl) lieuEl.value = p.lieuSignature || 'Bagneux';
   const typeEl = $('#param-type-epreuve');   if (typeEl) typeEl.value = p.typeEpreuve   || 'DNB';
   const dateEl = $('#param-date-epreuve');   if (dateEl) dateEl.value = p.dateEpreuve   || '';
@@ -780,12 +801,11 @@ function chargerParams() {
 }
 
 function initParams() {
-  // Ouvrir la modal depuis plusieurs points d'entrée
+  // [NOTE] 'btn-open-params' n'existe pas dans le HTML — géré silencieusement par ?.addEventListener
   ['btn-open-params','btn-open-params-nav','btn-open-params-affectation'].forEach(id => {
     document.getElementById(id)?.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
   });
 
-  // Toggle pauses dans la modal
   [1,2,3].forEach(n => {
     document.getElementById(`param-pause${n}-active`)?.addEventListener('change', e => {
       _togglePauseBloc(n, e.target.checked);
@@ -834,11 +854,32 @@ function initTableActions() {
     switch(action) {
       case 'edit-jury':  { const j=AppData.getJury(id); if(j) ouvrirModalJury(j); break; }
       case 'del-jury':
-        if (confirm('Supprimer ce jury ?')) { AppData.deleteJury(id); renderJurys(); Unsaved.marquer(); notifier('Jury supprimé.','warning'); }
+        if (confirm('Supprimer ce jury ?\n\nLes créneaux associés seront également supprimés.')) {
+          // [BUG-1 FIX] Nettoyer les créneaux orphelins du jury supprimé
+          AppData.affectation = AppData.affectation.filter(c => c.juryId !== id);
+          AppData.deleteJury(id);
+          renderJurys();
+          UI.renderAffectation();
+          Unsaved.marquer();
+          notifier('Jury et ses créneaux supprimés.','warning');
+        }
         break;
       case 'edit-eleve': { const ev=AppData.getEleve(id); if(ev) ouvrirModalEleve(ev); break; }
       case 'del-eleve':
-        if (confirm('Supprimer cet élève ?')) { AppData.deleteEleve(id); renderEleves(); peuplerFiltreLangues(); Unsaved.marquer(); notifier('Élève supprimé.','warning'); }
+        if (confirm("Supprimer cet élève ?\n\nIl sera retiré de tous les créneaux d'affectation.")) {
+          // [BUG-2 FIX] Retirer l'élève des créneaux, supprimer les créneaux devenus vides
+          AppData.affectation = AppData.affectation
+            .map(c => ({ ...c, eleveIds: c.eleveIds.filter(eid => eid !== id) }))
+            .filter(c => c.eleveIds.length > 0);
+          // Recalculer les horaires après nettoyage
+          if (typeof Affectation !== 'undefined') Affectation._recalculerTous();
+          AppData.deleteEleve(id);
+          renderEleves();
+          peuplerFiltreLangues();
+          UI.renderAffectation();
+          Unsaved.marquer();
+          notifier('Élève supprimé et créneaux mis à jour.','warning');
+        }
         break;
       case 'del-creneau':
         if (confirm('Retirer ce créneau ?')) { Affectation.supprimerCreneau(idx); UI.renderAffectation(); Unsaved.marquer(); notifier('Créneau supprimé.','warning'); }
@@ -905,7 +946,6 @@ function initImportExportJSON() {
 // ════════════════════════════════════════════════════════════════
 
 function initExportExcel() {
-  // Un seul listener pour les deux boutons (sidebar + onglet impressions)
   $$('#btn-export-xlsx, #btn-export-xlsx-impressions').forEach(btn => {
     if (!btn) return;
     btn.addEventListener('click', () => {
@@ -916,7 +956,6 @@ function initExportExcel() {
     });
   });
 
-  // Bouton téléchargement modèle vierge
   document.getElementById('btn-dl-modele')?.addEventListener('click', () => {
     if (typeof telechargerModeleExcel === 'function') {
       telechargerModeleExcel();

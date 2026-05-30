@@ -1,15 +1,15 @@
 /**
  * print.js — Génération et impression des documents officiels
- * Oral DNB · Collège Joliot Curie  —  Rev.6
+ * Oral DNB · Collège Joliot Curie  —  Rev.8
  *
- * Corrections Rev.6 :
+ * Corrections Rev.8 (audit senior) :
+ *   [BUG-5] _lireEditeur() filtrait les items vides en édition intermédiaire
+ *           → le filtre est maintenant appliqué UNIQUEMENT à la sauvegarde finale
+ *           → les lignes vides restent visibles pendant l'édition (comportement attendu)
+ *
+ * Conservé de Rev.6 :
  *   — _esc2 remplacée par window.escHtml (défini dans ui.js)
  *   — Doublon listener btn-consignes-reset supprimé (une seule déclaration)
- *   — Méthodes mortes supprimées : ouvrirEditeurConsignes(),
- *     sauvegarderConsignes() (plus de bouton correspondant dans le HTML)
- *   — Radios pi-genre-m/f retirés de la logique de lecture (le select
- *     encode déjà le genre dans sa valeur "Libellé|Genre")
- *   — @page margin=0 : marges gérées en CSS
  */
 
 'use strict';
@@ -590,13 +590,24 @@ const Print = {
     });
   },
 
-  _lireEditeur() {
+  /**
+   * Lit l'état de l'éditeur de consignes.
+   * [BUG-5 FIX] filtreVides=false par défaut pour les appels intermédiaires :
+   * les lignes vides sont conservées pendant l'édition (l'utilisateur peut les remplir).
+   * filtreVides=true uniquement lors de la sauvegarde finale (sauvegarderParamsImpression).
+   */
+  _lireEditeur(filtreVides = false) {
     const container = document.getElementById('consignes-editor-content'); if (!container) return [];
     const blocs = [];
     container.querySelectorAll('.consigne-edit-bloc').forEach(blocEl => {
       const titre = blocEl.querySelector('.consigne-edit-titre')?.value || '';
       const items = [];
-      blocEl.querySelectorAll('.consigne-edit-item').forEach(inp => { if (inp.value.trim()) items.push(inp.value.trim()); });
+      blocEl.querySelectorAll('.consigne-edit-item').forEach(inp => {
+        // En mode intermédiaire, conserver les items vides pour ne pas les effacer
+        if (filtreVides ? inp.value.trim() : true) {
+          items.push(inp.value.trim());
+        }
+      });
       blocs.push({ titre, items });
     });
     return blocs;
@@ -717,7 +728,7 @@ const Print = {
     };
 
     // Sauvegarder les consignes éditées dans la même modal
-    AppData.params.consignesJury = this._lireEditeur();
+    AppData.params.consignesJury = this._lireEditeur(true); // filtreVides=true : ne sauvegarder que les items renseignés
     PrintConfig.set(cfg);
     // Rev.7 : panneau inline, pas de modale à fermer
     // if (typeof fermerModal === 'function') fermerModal('modal-params-impression');
