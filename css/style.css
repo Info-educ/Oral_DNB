@@ -398,16 +398,14 @@ dialog.modal::backdrop { display: none; }
 #print-zone { display: none; }
 
 @media print {
-  .sidebar, .modal-backdrop, dialog.modal, #notif-zone,
-  .calc-panel, .stats-bar, .section-header .btn,
-  .btn-group, .toolbar, .btn-icon, .col-actions { display: none !important; }
+  /* Masquer TOUTE l'interface — seul #print-zone doit s'imprimer */
+  body > *:not(#print-zone) { display: none !important; }
+  .app-layout, .sidebar, .main-wrapper, .app-main,
+  .modal-backdrop, dialog.modal, #notif-zone { display: none !important; }
 
-  .app-layout   { display: block; }
-  .main-wrapper { display: block; }
-  #print-zone   { display: block !important; }
+  #print-zone { display: block !important; }
 
   body { background: white; font-size: 10.5pt; color: #000; font-family: Arial, sans-serif; }
-  .app-main { padding: 0; max-width: 100%; }
 
   .print-page { padding: 1cm 1.5cm; page-break-after: always; }
   .print-page:last-child { page-break-after: avoid; }
