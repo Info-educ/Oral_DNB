@@ -1,23 +1,20 @@
 /**
  * print.js — Génération et impression des documents officiels
- * Oral DNB · Collège Joliot Curie  —  Rev.10
+ * Oral DNB · Collège Joliot Curie  —  Rev.11
  *
- * Corrections Rev.10 :
+ * Corrections Rev.11 :
+ *   — Suppression du bloc de code mort ouvrirModal/fermerModal dans
+ *     ouvrirParamsImpression() et sauvegarderParamsImpression()
+ *     (modal-params-impression supprimée en Rev.7, remplacée par panneau inline)
+ *   — Ajout avertissement JSON dans exporterJSON() si une signature est présente
+ *
+ * Héritage Rev.10 :
  *   [PAGE-GARDE] Bandeau de garde = page 1 dédiée, documents à partir de la page 2
- *              → _bandeauGarde() retourne une .print-page autonome
- *              → Les 5 méthodes injectent _garde + pages (concaténation directe)
- *
- * Corrections Rev.9 (conservées) :
- *   [BUG-BLANC] Page blanche en début d'impression (Chrome/Edge Windows)
- *              → _imprimer() utilise désormais window.open() pour ouvrir une
- *                fenêtre dédiée contenant uniquement les pages à imprimer.
- *              → Plus de conflit entre le DOM de l'application et #print-zone.
- *              → Fallback automatique si popup bloqué (comportement Rev.8).
- *
- * Conservé de Rev.8 :
+ * Héritage Rev.9 :
+ *   [BUG-BLANC] Page blanche → _imprimer() utilise window.open() + fallback
+ * Héritage Rev.8 :
  *   [BUG-5] _lireEditeur() : filtre vides uniquement à la sauvegarde finale
  *   — _esc2 remplacée par window.escHtml (défini dans ui.js)
- *   — Doublon listener btn-consignes-reset supprimé (une seule déclaration)
  */
 
 'use strict';
@@ -1629,11 +1626,6 @@ ${html}
     _setCheck('pi-em-note',  cfg.emargement.colonneNote);
 
     this._renderEditeurContenu(this._getConsignes());
-
-    if (typeof ouvrirModal === 'function') {
-      // La modal d'impression est supprimée en Rev.7 — le panneau est inline
-      // ouvrirModal('modal-params-impression');
-    }
   },
 
   sauvegarderParamsImpression() {
@@ -1678,11 +1670,9 @@ ${html}
       },
     };
 
-    // Sauvegarder les consignes éditées dans la même modal
-    AppData.params.consignesJury = this._lireEditeur(true); // filtreVides=true : ne sauvegarder que les items renseignés
+    // Sauvegarder les consignes éditées (filtreVides=true : items vides exclus)
+    AppData.params.consignesJury = this._lireEditeur(true);
     PrintConfig.set(cfg);
-    // Rev.7 : panneau inline, pas de modale à fermer
-    // if (typeof fermerModal === 'function') fermerModal('modal-params-impression');
     if (typeof notifier === 'function') notifier('Paramètres d\'impression sauvegardés.', 'success');
   },
 

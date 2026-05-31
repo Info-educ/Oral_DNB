@@ -1,9 +1,14 @@
 /**
  * affectation.js — Moteur d'affectation automatique
- * Oral DNB · Collège Joliot Curie  —  Rev.8
+ * Oral DNB · Collège Joliot Curie  —  Rev.11
  *
- * Corrections Rev.8 (audit senior) :
- * Conservé de Rev.6/7 (comportement métier confirmé) :
+ * Corrections Rev.11 :
+ *   — _recalculerTous() : tri des créneaux par .ordre avant recalcul des horaires
+ *     (garantit le bon ordre après un DnD qui réorganise AppData.affectation)
+ *   — Note : la logique reverse().findIndex() dans deplacerCreneauDnD est correcte,
+ *     aucune modification nécessaire sur ce point.
+ *
+ * Héritage Rev.8 :
  *   — Règle langue : élève avec LV → jury même LV ; élève sans LV → jury sans LV en priorité,
  *     puis jury avec LV en complément (fill). Un jury avec LV peut accueillir des élèves sans LV.
  *   — escHtml supprimée (définie dans ui.js, exposée en window.escHtml)
@@ -474,6 +479,10 @@ const Affectation = {
     parJury.forEach((creneaux, juryId) => {
       const jury = AppData.getJury(juryId);
       if (!jury || !creneaux.length) return;
+
+      // Trier par .ordre pour garantir le recalcul dans le bon ordre
+      // (indispensable après un DnD qui réorganise AppData.affectation)
+      creneaux.sort((a, b) => a.ordre - b.ordre);
 
       let curseur = AppData.enMinutes(jury.heureDebut || AppData.params.heureDebut);
       const pausesRestantes = pauses.map(p => ({ ...p, insere: false }));

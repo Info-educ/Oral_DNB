@@ -1,9 +1,14 @@
 /**
  * data.js — Modèle de données, persistance JSON, import/export Excel
- * Oral DNB · Collège Joliot Curie  —  Version Brique 2-5 Rev.3
+ * Oral DNB · Collège Joliot Curie  —  Rev.11
  *
- * Nouveautés rev.3 :
- *   - Feuille Élèves : NOM et Prénom désormais dans deux colonnes séparées
+ * Corrections Rev.11 :
+ *   - Suppression des 15 console.log() de debug (données élèves en console = non conforme)
+ *   - Suppression du champ 'matiere' fantôme dans le modèle jury (vestige non utilisé)
+ *   - Suppression du commentaire dupliqué // ── Jurys ──
+ *
+ * Héritage Rev.3 :
+ *   - Feuille Élèves : NOM et Prénom dans deux colonnes séparées
  *   - Règle de langue stricte :
  *       · élève Anglais  → jury Anglais uniquement
  *       · élève Espagnol → jury Espagnol uniquement
@@ -52,7 +57,6 @@ const AppData = {
     const jury = {
       id           : this._nextJuryId++,
       nom          : (fields.nom          || '').trim(),
-      matiere      : (fields.matiere      || '').trim(),
       langue       : (fields.langue       || '').trim(),   // texte libre : 'Anglais', 'Espagnol', '' = tous
       salle        : (fields.salle        || '').trim(),
       heureDebut   : fields.heureDebut    || this.params.heureDebut,
@@ -67,7 +71,6 @@ const AppData = {
     const jury = this.jurys.find(j => j.id === id);
     if (!jury) return null;
     jury.nom        = (fields.nom          || '').trim();
-    jury.matiere    = (fields.matiere      || '').trim();
     jury.langue     = (fields.langue       || '').trim();
     jury.salle      = (fields.salle        || '').trim();
     jury.heureDebut = fields.heureDebut    || jury.heureDebut;
@@ -409,25 +412,16 @@ const AppData = {
       const brut = XLSX.utils.sheet_to_json(ws, { defval: '', header: 1 });
       if (!brut.length) return { headers:[], rows:[] };
 
-      console.log('[DNB Import] Feuille "' + nom + '" — ' + brut.length + ' lignes brutes');
-      console.log('[DNB Import] L0:', JSON.stringify(brut[0]));
-      console.log('[DNB Import] L1:', JSON.stringify(brut[1]));
-
       const motsCles = /rang|nom|prenom|pr|classe|jury|enseignant|salle|langue|amenag|binome|sujet|parcours/i;
       let idxHeader = 0;
       for (let i = 0; i < Math.min(brut.length, 5); i++) {
         const nb = brut[i].filter(c => motsCles.test(String(c||''))).length;
-        console.log('[DNB Import] L' + i + ' → ' + nb + ' mots-clés');
         if (nb >= 2) { idxHeader = i; break; }
       }
 
       const headers = brut[idxHeader].map(c => String(c === null || c === undefined ? '' : c));
       const rows    = brut.slice(idxHeader + 1)
                          .filter(r => r.some(c => String(c||'').trim() !== ''));
-
-      console.log('[DNB Import] Headers:', headers);
-      console.log('[DNB Import] Nb lignes données:', rows.length);
-      if (rows.length > 0) console.log('[DNB Import] Ligne données[0]:', rows[0]);
 
       return { headers, rows };
     };
@@ -473,7 +467,6 @@ const AppData = {
       binome   : colIdx(hE, 'binôme', 'binome', 'duo', 'partenaire', 'binom'),
       amenag   : colIdx(hE, 'aménagement', 'amenagement', 'tiers'),
     };
-    console.log('[DNB Import] Index colonnes Élèves:', iE);
 
     rowsEleves.forEach(row => {
       let nom    = cellVal(row, iE.nom);
@@ -519,7 +512,6 @@ const AppData = {
     });
 
     // ── Jurys ──────────────────────────────────────────────────
-    // ── Jurys ──────────────────────────────────────────────────
     const { headers: hJ, rows: rowsJurys } = lireFeuille(nomJurys);
     const jurys = [];
 
@@ -531,13 +523,10 @@ const AppData = {
       langue : colIdx(hJ, 'langue vivante', 'langue', 'lv', 'language'),
       heure  : colIdx(hJ, 'heure', 'heure de début', 'début', 'debut', 'start'),
     };
-    console.log('[DNB Import] Index colonnes Jurys:', iJ);
-    console.log('[DNB Import] Headers Jurys:', hJ);
 
     rowsJurys.forEach((row, ri) => {
       const ens1 = cellVal(row, iJ.ens1);
       const ens2 = cellVal(row, iJ.ens2);
-      console.log('[DNB Import] Jury row ' + ri + ': ens1=' + ens1 + ' ens2=' + ens2);
 
       if (!ens1) return;
 
@@ -556,13 +545,8 @@ const AppData = {
         ? langueRaw.charAt(0).toUpperCase() + langueRaw.slice(1).toLowerCase()
         : '';
 
-      jurys.push({ nom: nomJury, matiere: '', langue, salle, heureDebut, capacite: 0 });
+      jurys.push({ nom: nomJury, langue, salle, heureDebut, capacite: 0 });
     });
-
-    console.log('[DNB Import] rowsJurys.length =', rowsJurys.length);
-    if (rowsJurys.length > 0) console.log('[DNB Import] rowsJurys[0] =', JSON.stringify(rowsJurys[0]));
-    console.log('[DNB Import] jurys parsés =', jurys.length, jurys.map(j=>j.nom));
-    console.log('[DNB Import] eleves parsés =', eleves.length);
 
     if (eleves.length === 0) avert.push('Aucun élève valide trouvé. Vérifiez les colonnes de la feuille Élèves.');
     if (jurys.length  === 0) avert.push('Aucun jury valide trouvé. Vérifiez les colonnes de la feuille Jurys.');
@@ -653,7 +637,7 @@ const AppData = {
 
   exporterJSON() {
     const snap = {
-      meta        : { version:'3.0', exportedAt:new Date().toISOString(), outil:'Gestion Oral DNB' },
+      meta        : { version:'3.1', exportedAt:new Date().toISOString(), outil:'Gestion Oral DNB' },
       params      : this.params,
       jurys       : this.jurys,
       eleves      : this.eleves,
@@ -664,6 +648,12 @@ const AppData = {
     const blob = new Blob([JSON.stringify(snap,null,2)], {type:'application/json'});
     const url  = URL.createObjectURL(blob);
     const a    = Object.assign(document.createElement('a'), {href:url, download:`oral-dnb-${new Date().toISOString().slice(0,10)}.json`});
+    // Avertissement si la session contient une signature numérique
+    if (this.params.impression && this.params.impression.signatureBase64) {
+      if (typeof notifier === 'function') {
+        notifier('⚠ Ce fichier JSON contient une image de signature. Conservez-le dans un endroit sûr et ne le partagez pas.', 'warning', 8000);
+      }
+    }
     a.click(); URL.revokeObjectURL(url);
   },
 

@@ -1,14 +1,17 @@
 /**
  * ui.js — Contrôleur interface utilisateur
- * Oral DNB · Collège Joliot Curie  —  Rev.8
+ * Oral DNB · Collège Joliot Curie  —  Rev.11
  *
- * Corrections Rev.8 (audit senior) :
+ * Corrections Rev.11 :
+ *   — Modal paramètres au démarrage : n'ouvre la modal que si aucune donnée n'est présente
+ *     (évite de bloquer l'utilisateur qui restaure une session JSON déjà configurée)
+ *   — Nettoyage de la liste initParams() : suppression de 'btn-open-params' inexistant en HTML
+ *
+ * Héritage Rev.8 :
  *   [BUG-1] Suppression jury → nettoyage des créneaux fantômes dans affectation[]
  *   [BUG-2] Suppression élève → nettoyage des créneaux fantômes dans affectation[]
  *   [BUG-4] deplacerCreneauDnD sans vérification capacité → ajout du contrôle
  *   [BUG-5] Items vides dans éditeur consignes disparaissent → filtre déplacé en save
- *
- * Conservé de Rev.6 :
  *   - escHtml définie ici UNIQUEMENT
  *   - backdrop déclaré dans initModals()
  *   - Toggle pauses unifié
@@ -801,8 +804,7 @@ function chargerParams() {
 }
 
 function initParams() {
-  // [NOTE] 'btn-open-params' n'existe pas dans le HTML — géré silencieusement par ?.addEventListener
-  ['btn-open-params','btn-open-params-nav','btn-open-params-affectation'].forEach(id => {
+  ['btn-open-params-nav','btn-open-params-affectation'].forEach(id => {
     document.getElementById(id)?.addEventListener('click', () => { chargerParams(); ouvrirModal('modal-params'); });
   });
 
@@ -996,7 +998,10 @@ document.addEventListener('DOMContentLoaded', () => {
   initImportExportJSON(); initImportExcel(); initExportExcel();
   initImpressions();
   renderJurys(); renderEleves(); UI.renderAffectation();
-  // Ouvrir automatiquement les paramètres généraux au démarrage
   chargerParams();
-  ouvrirModal('modal-params');
+  // Ouvrir la modal paramètres uniquement au premier lancement (aucune donnée présente).
+  // Si une session JSON a été restaurée, l'utilisateur atterrit directement sur l'interface.
+  if (AppData.nbJurys() === 0 && AppData.nbEleves() === 0) {
+    ouvrirModal('modal-params');
+  }
 });
